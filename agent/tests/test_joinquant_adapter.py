@@ -64,6 +64,72 @@ def _seed_signals(store: AShareDataStore, *, status: str = "approved", unsupport
             )
 
 
+def _seed_signal_batch(
+    store: AShareDataStore,
+    *,
+    signal_date: str,
+    valid_for: str,
+    suffix: str,
+    status: str = "approved",
+) -> None:
+    store.initialize()
+    tickers = [
+        ("600519.SH", "贵州茅台", 0.08, "buy", "白酒消费"),
+        ("300750.SZ", "宁德时代", 0.07, "increase", "新能源"),
+        ("000001.SH", "上证指数", 0.04, "hold", "宽基观察"),
+    ]
+    with store.connect() as conn:
+        for idx, (ticker, ticker_name, target_weight, action, theme) in enumerate(tickers):
+            conn.execute(
+                """
+                INSERT INTO execution_signals (
+                  signal_id, signal_date, valid_for, portfolio_id, ticker,
+                  ticker_name, target_weight, current_weight, action,
+                  strategy_sources, theme, reason, risk, status,
+                  created_at, approved_at
+                )
+                VALUES (?, ?, ?, 'cn_a_main',
+                        ?, ?, ?, 0.0, ?, '["ai_sector_momentum_v1"]',
+                        ?, 'PR-20 模拟盘准备度测试', '模拟信号，非实盘指令', ?, now(), now())
+                """,
+                [
+                    f"sig_pr20_{suffix}_{idx}",
+                    signal_date,
+                    valid_for,
+                    ticker,
+                    ticker_name,
+                    target_weight,
+                    action,
+                    theme,
+                    status,
+                ],
+            )
+
+
+def _seed_backtest_runs(store: AShareDataStore, *, max_drawdown: float = -0.06) -> None:
+    store.initialize()
+    with store.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO backtest_runs (
+              run_id, strategy_id, market, start_date, end_date, universe_id,
+              benchmark, total_return, annual_return, max_drawdown, sharpe,
+              sortino, calmar, win_rate, profit_loss_ratio, turnover,
+              trade_count, avg_holding_days, excess_return, information_ratio,
+              status, artifacts_path, created_at
+            )
+            VALUES (
+              'bt_pr20_ai_sector', 'ai_sector_momentum_v1', 'CN_A',
+              DATE '2026-01-01', DATE '2026-06-20', 'cn_a_core',
+              '000300.SH', 0.12, 0.24, ?, 1.35,
+              1.1, 2.0, 0.56, 1.4, 0.32,
+              42, 5.0, 0.04, 0.8, 'completed', '', now()
+            )
+            """,
+            [max_drawdown],
+        )
+
+
 def test_joinquant_ticker_mapping_examples() -> None:
     assert map_ticker("600519.SH") == "600519.XSHG"
     assert map_ticker("300750.SZ") == "300750.XSHE"
@@ -346,6 +412,116 @@ def test_import_execution_reports_rejects_mixed_batches(
         )
 
 
+def test_simulation_readiness_report_ready_for_clean_simulation(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signal_batch(store, signal_date="2026-06-23", valid_for="2026-06-24", suffix="clean")
+    _seed_backtest_runs(store, max_drawdown=-0.06)
+    exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {"ticker": "300750.XSHE", "order_status": "filled", "executed_weight": 0.07},
+            {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+        ],
+    )
+
+    report = exporter.simulation_readiness_report(
+        portfolio_id="cn_a_main",
+        lookback_days=10,
+        min_batches=1,
+    )
+
+    assert report["status"] == "ready"
+    assert report["recommendation"] == "continue_simulation"
+    assert report["observed_batch_count"] == 1
+    assert report["totals"]["failed_count"] == 0
+    assert report["backtest_risk"]["status"] == "ok"
+    assert report["live_trading"] is False
+
+
+def test_simulation_readiness_report_requires_observation_window(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signal_batch(store, signal_date="2026-06-23", valid_for="2026-06-24", suffix="short")
+    _seed_backtest_runs(store, max_drawdown=-0.04)
+    exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {"ticker": "300750.XSHE", "order_status": "filled", "executed_weight": 0.07},
+            {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+        ],
+    )
+
+    report = exporter.simulation_readiness_report(
+        portfolio_id="cn_a_main",
+        lookback_days=10,
+        min_batches=3,
+    )
+
+    assert report["status"] == "needs_more_data"
+    assert report["recommendation"] == "extend_observation"
+    assert any(item["name"] == "observation_window" and item["status"] == "warning" for item in report["checks"])
+    assert "继续积累样本" in "；".join(report["findings"])
+
+
+def test_simulation_readiness_report_flags_execution_and_backtest_risk(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signal_batch(store, signal_date="2026-06-23", valid_for="2026-06-24", suffix="risk_a")
+    _seed_signal_batch(store, signal_date="2026-06-24", valid_for="2026-06-25", suffix="risk_b")
+    _seed_backtest_runs(store, max_drawdown=-0.12)
+    exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {
+                "ticker": "300750.XSHE",
+                "order_status": "rejected",
+                "executed_weight": 0,
+                "error_message": "涨停无法买入",
+            },
+            {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+        ],
+    )
+    exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-24",
+        trade_date="2026-06-25",
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {"ticker": "300750.XSHE", "order_status": "filled", "executed_weight": 0.02},
+            {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+        ],
+    )
+
+    report = exporter.simulation_readiness_report(
+        portfolio_id="cn_a_main",
+        lookback_days=10,
+        min_batches=2,
+        tolerance=0.01,
+    )
+
+    assert report["status"] == "needs_review"
+    assert report["recommendation"] == "fix_before_live"
+    assert report["totals"]["failed_count"] == 1
+    assert report["totals"]["deviation_count"] >= 1
+    assert report["totals"]["limit_or_suspend_issue_count"] == 1
+    assert report["backtest_risk"]["status"] == "needs_review"
+    assert any(item["name"] == "backtest_drawdown" and item["status"] == "fail" for item in report["checks"])
+    assert "需要定位聚宽侧原因" in "；".join(report["findings"])
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("ASHARE_DATA_ROOT", str(tmp_path / "runtime"))
@@ -356,6 +532,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     store = AShareDataStore()
     _seed_signals(store)
+    _seed_backtest_runs(store, max_drawdown=-0.06)
 
     preflight = client.post(
         "/api/joinquant/export/preflight",
@@ -435,3 +612,12 @@ def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     )
     assert report_summary.status_code == 200
     assert report_summary.json()["action_required"] is False
+
+    readiness = client.get(
+        "/api/joinquant/simulation-readiness",
+        params={"portfolio_id": "cn_a_main", "lookback_days": 10, "min_batches": 1},
+    )
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready"
+    assert readiness.json()["observed_batch_count"] == 1
+    assert readiness.json()["live_trading"] is False
