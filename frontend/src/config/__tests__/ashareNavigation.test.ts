@@ -19,6 +19,7 @@ describe("A-share navigation", () => {
       "/risk-portfolio",
       "/trade-plan",
       "/joinquant-export",
+      "/daily-workflow",
       "/data-sources",
       "/settings",
     ]);

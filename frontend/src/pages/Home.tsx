@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BarChart3, ClipboardList, FileText, Layers, Radar, ShieldCheck, Target } from "lucide-react";
+import { BarChart3, ClipboardList, FileText, Layers, ListChecks, Radar, ShieldCheck, Target } from "lucide-react";
 
 const WORKFLOW = [
   { title: "事件雷达", desc: "收集热点事件并判断 A 股相关度", to: "/event-radar", icon: Radar },
@@ -8,6 +8,7 @@ const WORKFLOW = [
   { title: "回测结果", desc: "验收策略收益、回撤和交易成本", to: "/backtest-results", icon: BarChart3 },
   { title: "风控组合", desc: "统一多策略资金分配和目标持仓", to: "/risk-portfolio", icon: ShieldCheck },
   { title: "聚宽导出", desc: "复制到聚宽回测或模拟运行", to: "/joinquant-export", icon: FileText },
+  { title: "每日工作流", desc: "手动串联事件、候选、回测、风控和草稿信号", to: "/daily-workflow", icon: ListChecks },
 ];
 
 const STATUS = [
