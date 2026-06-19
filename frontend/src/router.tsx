@@ -38,7 +38,7 @@ const StrategyLab = lazy(() =>
   import("@/pages/StrategyLab").then((m) => ({ default: m.StrategyLab })),
 );
 const BacktestResults = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.BacktestResults })),
+  import("@/pages/BacktestResults").then((m) => ({ default: m.BacktestResults })),
 );
 const RiskPortfolio = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.RiskPortfolio })),
