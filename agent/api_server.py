@@ -3317,6 +3317,9 @@ register_portfolio_risk_routes(app, require_local_or_auth=require_local_or_auth)
 from src.api.joinquant_routes import register_joinquant_routes  # noqa: E402
 register_joinquant_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.daily_workflow_routes import register_daily_workflow_routes  # noqa: E402
+register_daily_workflow_routes(app, require_local_or_auth=require_local_or_auth)
+
 
 # ============================================================================
 # Main Entry Point
