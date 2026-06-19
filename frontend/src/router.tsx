@@ -41,7 +41,7 @@ const BacktestResults = lazy(() =>
   import("@/pages/BacktestResults").then((m) => ({ default: m.BacktestResults })),
 );
 const RiskPortfolio = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.RiskPortfolio })),
+  import("@/pages/RiskPortfolio").then((m) => ({ default: m.RiskPortfolio })),
 );
 const TradePlan = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.TradePlan })),
