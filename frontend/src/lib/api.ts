@@ -626,7 +626,8 @@ export type DailyWorkflowStepName =
   | "run_backtests"
   | "rank_backtests"
   | "allocate_portfolio"
-  | "generate_draft_signals";
+  | "generate_draft_signals"
+  | "calculate_event_reactions";
 
 export interface DailyWorkflowDocumentPayload {
   source_id: string;
@@ -667,6 +668,10 @@ export interface DailyWorkflowRunRequest {
   current_drawdown?: number;
   signal_confidence?: number;
   replace_signals?: boolean;
+  event_reaction_windows?: EventReactionWindow[] | null;
+  event_reaction_target_types?: EventReactionTargetType[] | null;
+  event_reaction_limit?: number;
+  replace_event_reactions?: boolean;
 }
 
 export interface DailyWorkflowStepResult {

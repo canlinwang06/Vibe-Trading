@@ -47,7 +47,7 @@ class WorkflowDocumentPayload(BaseModel):
 class DailyWorkflowRunRequest(BaseModel):
     workflow_date: str | None = Field(default=None, min_length=10, max_length=10)
     portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
-    steps: list[str] | None = Field(default=None, max_length=10)
+    steps: list[str] | None = Field(default=None, max_length=11)
     documents: list[WorkflowDocumentPayload] = Field(default_factory=list, max_length=100)
     dry_run: bool = False
     continue_on_error: bool = False
@@ -68,6 +68,10 @@ class DailyWorkflowRunRequest(BaseModel):
     current_drawdown: float = Field(default=0.0, ge=-1.0, le=0.0)
     signal_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     replace_signals: bool = True
+    event_reaction_windows: list[str] | None = Field(default=None, max_length=4)
+    event_reaction_target_types: list[str] | None = Field(default=None, max_length=2)
+    event_reaction_limit: int = Field(default=100, ge=1, le=500)
+    replace_event_reactions: bool = True
 
 
 def _service() -> DailyWorkflowService:
@@ -121,6 +125,10 @@ def register_daily_workflow_routes(app: FastAPI, require_local_or_auth: AuthDep 
                 current_drawdown=payload.current_drawdown,
                 signal_confidence=payload.signal_confidence,
                 replace_signals=payload.replace_signals,
+                event_reaction_windows=payload.event_reaction_windows,
+                event_reaction_target_types=payload.event_reaction_target_types,
+                event_reaction_limit=payload.event_reaction_limit,
+                replace_event_reactions=payload.replace_event_reactions,
             )
         except DailyWorkflowError as exc:
             raise _http_error(exc) from exc

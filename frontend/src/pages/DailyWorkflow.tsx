@@ -32,6 +32,7 @@ const WORKFLOW_STEPS: { name: DailyWorkflowStepName; label: string; hint: string
   { name: "rank_backtests", label: "回测排名", hint: "策略评分" },
   { name: "allocate_portfolio", label: "风控组合", hint: "权重草案" },
   { name: "generate_draft_signals", label: "草稿信号", hint: "人工确认前" },
+  { name: "calculate_event_reactions", label: "事件反应", hint: "T+1/T+5/T+20/T+60" },
 ];
 
 const DEFAULT_STEPS = WORKFLOW_STEPS.map((step) => step.name);
@@ -261,6 +262,10 @@ export function DailyWorkflow() {
       ranking_limit: parseBoundedInteger(rankingLimit, "排名数量", 1, 500),
       seed_strategy_specs: true,
       replace_signals: replaceSignals,
+      event_reaction_windows: ["T+1", "T+5", "T+20", "T+60"],
+      event_reaction_target_types: ["sector", "stock"],
+      event_reaction_limit: 100,
+      replace_event_reactions: true,
     };
   };
 

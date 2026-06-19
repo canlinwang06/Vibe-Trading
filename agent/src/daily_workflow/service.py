@@ -19,6 +19,7 @@ from src.event_radar.source_ingestion import (
     EventSourceIngestionService,
     RawDocumentRecord,
 )
+from src.event_reactions.service import EventReactionError, EventReactionService
 from src.portfolio_risk.service import PortfolioRiskError, PortfolioRiskService
 from src.strategy_lab.backtest_factory import BacktestFactoryError, BacktestFactoryService
 from src.strategy_lab.ranking import StrategyRankingError, StrategyRankingService
@@ -35,6 +36,7 @@ ALLOWED_WORKFLOW_STEPS: tuple[str, ...] = (
     "rank_backtests",
     "allocate_portfolio",
     "generate_draft_signals",
+    "calculate_event_reactions",
 )
 
 DEFAULT_WORKFLOW_STEPS: tuple[str, ...] = ALLOWED_WORKFLOW_STEPS
@@ -49,6 +51,7 @@ WORKFLOW_ERRORS = (
     BacktestFactoryError,
     StrategyRankingError,
     PortfolioRiskError,
+    EventReactionError,
 )
 
 LARGE_RESULT_KEYS = {
@@ -102,6 +105,10 @@ class DailyWorkflowService:
         current_drawdown: float = 0.0,
         signal_confidence: float = 1.0,
         replace_signals: bool = True,
+        event_reaction_windows: Sequence[str] | None = None,
+        event_reaction_target_types: Sequence[str] | None = None,
+        event_reaction_limit: int = 100,
+        replace_event_reactions: bool = True,
     ) -> dict[str, Any]:
         self.store.initialize()
         as_of = _parse_date(workflow_date, field_name="workflow_date") or date.today()
@@ -136,6 +143,10 @@ class DailyWorkflowService:
             "current_drawdown": _clamp_float(current_drawdown, minimum=-1.0, maximum=0.0),
             "signal_confidence": _clamp_float(signal_confidence, minimum=0.0, maximum=1.0),
             "replace_signals": bool(replace_signals),
+            "event_reaction_windows": tuple(event_reaction_windows) if event_reaction_windows else None,
+            "event_reaction_target_types": tuple(event_reaction_target_types) if event_reaction_target_types else None,
+            "event_reaction_limit": _clamp_int(event_reaction_limit, minimum=1, maximum=500),
+            "replace_event_reactions": bool(replace_event_reactions),
         }
 
         results: list[dict[str, Any]] = []
@@ -204,6 +215,7 @@ class DailyWorkflowService:
             "rank_backtests": self._rank_backtests,
             "allocate_portfolio": self._allocate_portfolio,
             "generate_draft_signals": self._generate_draft_signals,
+            "calculate_event_reactions": self._calculate_event_reactions,
         }
         return runners[step_name](context)
 
@@ -340,6 +352,19 @@ class DailyWorkflowService:
             _summarize_result(result),
         )
 
+    def _calculate_event_reactions(self, context: dict[str, Any]) -> dict[str, Any]:
+        result = EventReactionService(store=self.store).calculate_reactions(
+            windows=context["event_reaction_windows"],
+            target_types=context["event_reaction_target_types"],
+            limit=context["event_reaction_limit"],
+            replace=context["replace_event_reactions"],
+        )
+        return _ok_step(
+            "calculate_event_reactions",
+            f"已更新 {result['reactions_written']} 条事件反应研究结果。",
+            _summarize_result(result),
+        )
+
 
 def _resolve_steps(steps: Sequence[str] | None) -> tuple[str, ...]:
     if steps is None:
@@ -412,6 +437,7 @@ def _planned_message(step: str) -> str:
         "rank_backtests": "将对本地回测结果排序评分。",
         "allocate_portfolio": "将生成研究组合权重草案。",
         "generate_draft_signals": "将生成执行信号草案，但不会审批或交易。",
+        "calculate_event_reactions": "将基于本地行情计算事件后 T+1/T+5/T+20/T+60 表现。",
     }[step]
 
 

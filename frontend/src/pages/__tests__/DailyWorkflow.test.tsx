@@ -59,8 +59,9 @@ const okResponse: DailyWorkflowRunResponse = {
     "rank_backtests",
     "allocate_portfolio",
     "generate_draft_signals",
+    "calculate_event_reactions",
   ],
-  completed_step_count: 10,
+  completed_step_count: 11,
   skipped_step_count: 0,
   blocked_step: null,
   steps: [
@@ -75,6 +76,12 @@ const okResponse: DailyWorkflowRunResponse = {
       status: "ok",
       message: "已生成 3 条执行信号草案，仍需人工确认。",
       metrics: { signals_written: 3 },
+    },
+    {
+      name: "calculate_event_reactions",
+      status: "ok",
+      message: "已更新 8 条事件反应研究结果。",
+      metrics: { reactions_written: 8 },
     },
   ],
   research_only: true,
@@ -124,6 +131,8 @@ describe("DailyWorkflow page", () => {
       portfolio_id: "cn_a_main",
       documents: [expect.objectContaining({ title: "AI 产业链事件跟踪" })],
       steps: expect.arrayContaining(["collect_documents", "generate_draft_signals"]),
+      event_reaction_windows: ["T+1", "T+5", "T+20", "T+60"],
+      event_reaction_target_types: ["sector", "stock"],
     }));
     expect(await screen.findByText("试运行计划已生成")).toBeInTheDocument();
     expect(screen.getAllByText("计划中").length).toBeGreaterThan(0);
@@ -138,6 +147,8 @@ describe("DailyWorkflow page", () => {
     expect(await screen.findByText("工作流已完成")).toBeInTheDocument();
     expect(screen.getAllByText("草稿信号").length).toBeGreaterThan(0);
     expect(screen.getByText("已生成 3 条执行信号草案，仍需人工确认。")).toBeInTheDocument();
+    expect(screen.getAllByText("事件反应").length).toBeGreaterThan(0);
+    expect(screen.getByText("已更新 8 条事件反应研究结果。")).toBeInTheDocument();
     expect(screen.getAllByText("研究/模拟").length).toBeGreaterThan(0);
   });
 
