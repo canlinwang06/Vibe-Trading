@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.strategy_lab.backtest_factory import BacktestFactoryError, BacktestFactoryService
+from src.strategy_lab.ranking import StrategyRankingError, StrategyRankingService
 from src.strategy_lab.service import StrategyLabError, StrategyLabService
 
 AuthDep = Callable[..., Awaitable[Any] | Any]
@@ -48,6 +49,10 @@ def _backtest_factory() -> BacktestFactoryService:
     return BacktestFactoryService()
 
 
+def _ranking_service() -> StrategyRankingService:
+    return StrategyRankingService()
+
+
 def _resolve_auth(require_local_or_auth: AuthDep | None) -> AuthDep:
     if require_local_or_auth is not None:
         return require_local_or_auth
@@ -65,6 +70,10 @@ def _http_error(exc: StrategyLabError, status_code: int = 400) -> HTTPException:
 
 
 def _backtest_http_error(exc: BacktestFactoryError, status_code: int = 400) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=str(exc))
+
+
+def _ranking_http_error(exc: StrategyRankingError, status_code: int = 400) -> HTTPException:
     return HTTPException(status_code=status_code, detail=str(exc))
 
 
@@ -120,6 +129,31 @@ def register_strategy_lab_routes(app: FastAPI, require_local_or_auth: AuthDep | 
             return _backtest_factory().get_backtest_run(run_id)
         except BacktestFactoryError as exc:
             raise _backtest_http_error(exc, status_code=404) from exc
+
+    @app.get("/api/strategy-lab/backtest-rankings", dependencies=[Depends(auth)])
+    def list_backtest_rankings(
+        strategy_type: str | None = Query(None, max_length=80),
+        status: str = Query("completed", max_length=40),
+        min_score: float | None = Query(None, ge=0, le=100),
+        limit: int = Query(50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            service = _ranking_service()
+            rankings = service.list_rankings(
+                strategy_type=strategy_type,
+                status=status,
+                min_score=min_score,
+                limit=limit,
+            )
+        except StrategyRankingError as exc:
+            raise _ranking_http_error(exc) from exc
+        return {
+            "rankings": rankings,
+            "ranking_count": len(rankings),
+            "scoring_model": service.scoring_model(),
+            "research_only": True,
+            "live_trading": False,
+        }
 
     @app.get("/api/strategy-lab/specs", dependencies=[Depends(auth)])
     def list_strategy_specs(
