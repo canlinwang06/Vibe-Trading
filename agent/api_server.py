@@ -3299,6 +3299,14 @@ register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
 
 
 # ============================================================================
+# Event radar source routes (Web UI / local workbench)
+# ============================================================================
+
+from src.api.event_radar_routes import register_event_radar_routes  # noqa: E402
+register_event_radar_routes(app, require_local_or_auth=require_local_or_auth)
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
