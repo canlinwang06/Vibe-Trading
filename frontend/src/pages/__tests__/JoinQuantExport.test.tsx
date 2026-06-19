@@ -7,6 +7,7 @@ import type {
   JoinQuantExecutionReportListResponse,
   JoinQuantExecutionReportSummary,
   JoinQuantPreflightResponse,
+  JoinQuantSimulationReadinessReport,
 } from "@/lib/api";
 
 const apiMock = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const apiMock = vi.hoisted(() => ({
   joinQuantImportExecutionReports: vi.fn(),
   joinQuantExecutionReportSummary: vi.fn(),
   joinQuantListExecutionReports: vi.fn(),
+  joinQuantSimulationReadiness: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -188,6 +190,87 @@ const listResponse: JoinQuantExecutionReportListResponse = {
   reports: executionReports,
 };
 
+const readinessReport: JoinQuantSimulationReadinessReport = {
+  status: "needs_review",
+  recommendation: "fix_before_live",
+  readiness_score: 52,
+  portfolio_id: "cn_a_main",
+  lookback_days: 30,
+  window_start: "2026-05-26",
+  window_end: "2026-06-24",
+  tolerance: 0.02,
+  min_batches: 2,
+  observed_batch_count: 2,
+  signal_batch_count: 2,
+  missing_signal_batch_count: 0,
+  totals: {
+    report_count: 6,
+    signal_count: 6,
+    failed_count: 1,
+    missing_report_count: 0,
+    unmatched_report_count: 0,
+    deviation_count: 1,
+    limit_or_suspend_issue_count: 1,
+    total_abs_weight_diff: 0.07,
+    max_abs_weight_diff: 0.07,
+    avg_signal_delay_days: 1,
+    max_signal_delay_days: 1,
+  },
+  rates: {
+    failed_rate: 0.166667,
+    missing_report_rate: 0,
+    unmatched_report_rate: 0,
+    deviation_rate: 0.166667,
+  },
+  backtest_risk: {
+    status: "needs_review",
+    run_count: 3,
+    worst_max_drawdown: -0.12,
+    avg_sharpe: 1.12,
+    avg_trade_count: 38,
+    message: "回测最差最大回撤 -12.00%，达到复盘阈值。",
+  },
+  checks: [
+    {
+      name: "execution_failure_rate",
+      status: "fail",
+      observed: 0.166667,
+      threshold: 0.05,
+      message: "存在失败、撤单或拒单记录，需要复盘原因。",
+    },
+    {
+      name: "observation_window",
+      status: "pass",
+      observed: 2,
+      threshold: 2,
+      message: "模拟盘观察批次数已达到验收下限。",
+    },
+  ],
+  findings: [
+    "发现 1 条失败、撤单或拒单记录，需要定位聚宽侧原因。",
+    "回测最差最大回撤 -12.00%，达到复盘阈值。",
+  ],
+  daily_summaries: [
+    {
+      signal_date: "2026-06-23",
+      trade_date: "2026-06-24",
+      status: "needs_review",
+      report_count: 3,
+      signal_count: 3,
+      failed_count: 1,
+      missing_report_count: 0,
+      unmatched_report_count: 0,
+      max_abs_weight_diff: 0.07,
+      total_abs_weight_diff: 0.07,
+      deviation_count: 1,
+      signal_delay_days: 1,
+      action_required: true,
+    },
+  ],
+  research_only: true,
+  live_trading: false,
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -205,6 +288,7 @@ describe("JoinQuantExport page", () => {
     apiMock.joinQuantImportExecutionReports.mockReset();
     apiMock.joinQuantExecutionReportSummary.mockReset();
     apiMock.joinQuantListExecutionReports.mockReset();
+    apiMock.joinQuantSimulationReadiness.mockReset();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -219,7 +303,9 @@ describe("JoinQuantExport page", () => {
     expect(screen.getByText("导出参数")).toBeInTheDocument();
     expect(screen.getByText("复制状态")).toBeInTheDocument();
     expect(screen.getByText("执行报告导入")).toBeInTheDocument();
+    expect(screen.getByText("模拟盘准备度")).toBeInTheDocument();
     expect(screen.getByLabelText("报告 JSON")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "生成准备度报告" })).toBeInTheDocument();
     expect(screen.getByText("仅导出 approved 信号")).toBeInTheDocument();
     expect(screen.getByText("不登录聚宽，不提交订单")).toBeInTheDocument();
   });
@@ -403,5 +489,37 @@ describe("JoinQuantExport page", () => {
     expect(await screen.findByText("已加载 2 条报告的复盘摘要。")).toBeInTheDocument();
     expect(screen.getByText("执行复盘摘要")).toBeInTheDocument();
     expect(screen.getByText("最近导入报告")).toBeInTheDocument();
+  });
+
+  it("generates a simulation readiness report from the Chinese UI", async () => {
+    apiMock.joinQuantSimulationReadiness.mockResolvedValue(readinessReport);
+
+    render(<JoinQuantExport />);
+    fireEvent.change(screen.getByLabelText("观察天数"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("最低批次"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("准备度偏差容忍度"), { target: { value: "0.02" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成准备度报告" }));
+
+    await waitFor(() => expect(apiMock.joinQuantSimulationReadiness).toHaveBeenCalledTimes(1));
+    expect(apiMock.joinQuantSimulationReadiness).toHaveBeenCalledWith({
+      portfolio_id: "cn_a_main",
+      lookback_days: 30,
+      min_batches: 2,
+      tolerance: 0.02,
+    });
+    expect(await screen.findByText("准备度结论：需要复盘。")).toBeInTheDocument();
+    expect(screen.getByText("模拟盘准备度报告")).toBeInTheDocument();
+    expect(screen.getByText("修复后再评估")).toBeInTheDocument();
+    expect(screen.getByText("发现 1 条失败、撤单或拒单记录，需要定位聚宽侧原因。")).toBeInTheDocument();
+    expect(screen.getByText("execution_failure_rate")).toBeInTheDocument();
+  });
+
+  it("blocks invalid readiness parameters before calling the API", async () => {
+    render(<JoinQuantExport />);
+    fireEvent.change(screen.getByLabelText("观察天数"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "生成准备度报告" }));
+
+    expect(await screen.findByText("观察天数必须是 1 到 365 之间的整数。")).toBeInTheDocument();
+    expect(apiMock.joinQuantSimulationReadiness).not.toHaveBeenCalled();
   });
 });

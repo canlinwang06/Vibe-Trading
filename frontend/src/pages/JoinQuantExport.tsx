@@ -7,6 +7,7 @@ import {
   Download,
   FileCode2,
   FileSearch,
+  Gauge,
   ListChecks,
   Loader2,
   RefreshCw,
@@ -21,6 +22,7 @@ import {
   type JoinQuantExecutionReportSummary,
   type JoinQuantExportRequest,
   type JoinQuantPreflightResponse,
+  type JoinQuantSimulationReadinessReport,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +48,7 @@ const DEFAULT_REPORT_JSON = JSON.stringify(
 
 type LoadingAction = "preflight" | "package" | "copy" | null;
 type ReportAction = "import" | "summary" | null;
+type ReadinessAction = "readiness" | null;
 
 type CopyState =
   | { status: "idle"; message: string }
@@ -93,6 +96,44 @@ function parseReportRows(value: string): Record<string, unknown>[] {
     return (parsed as { reports: Record<string, unknown>[] }).reports;
   }
   throw new Error("报告 JSON 必须是数组，或包含 reports 数组的对象。");
+}
+
+function parseBoundedNumber(value: string, label: string, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label}必须在 ${min} 到 ${max} 之间。`);
+  }
+  return parsed;
+}
+
+function parseBoundedInteger(value: string, label: string, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label}必须是 ${min} 到 ${max} 之间的整数。`);
+  }
+  return parsed;
+}
+
+function readinessStatusLabel(status: string): string {
+  if (status === "ready") return "准备度通过";
+  if (status === "ok") return "通过";
+  if (status === "needs_more_data") return "继续观察";
+  if (status === "needs_review") return "需要复盘";
+  return status;
+}
+
+function recommendationLabel(recommendation: string): string {
+  if (recommendation === "continue_simulation") return "继续模拟观察";
+  if (recommendation === "extend_observation") return "延长观察窗口";
+  if (recommendation === "fix_before_live") return "修复后再评估";
+  return recommendation;
+}
+
+function checkStatusLabel(status: string): string {
+  if (status === "pass") return "通过";
+  if (status === "warning") return "提醒";
+  if (status === "fail") return "阻断";
+  return status;
 }
 
 function downloadTextFile(filename: string, content: string, contentType: string) {
@@ -339,6 +380,124 @@ function ExecutionReportTable({ reports }: { reports: JoinQuantExecutionReport[]
   );
 }
 
+function ReadinessReportPanel({ report }: { report: JoinQuantSimulationReadinessReport }) {
+  const statusTone = report.status === "ready"
+    ? "border-success/30 bg-success/5 text-success"
+    : report.status === "needs_review"
+      ? "border-destructive/30 bg-destructive/5 text-destructive"
+      : "border-warning/30 bg-warning/5 text-warning";
+  const metrics = [
+    { label: "准备度分数", value: String(report.readiness_score) },
+    { label: "观察批次", value: `${report.observed_batch_count}/${report.min_batches}` },
+    { label: "失败订单", value: String(report.totals.failed_count) },
+    { label: "最大偏差", value: formatPercent(report.totals.max_abs_weight_diff) },
+    { label: "缺失回报", value: String(report.totals.missing_report_count) },
+    { label: "最大延迟", value: `${report.totals.max_signal_delay_days} 天` },
+    { label: "涨跌停/停牌", value: String(report.totals.limit_or_suspend_issue_count) },
+    { label: "最差回撤", value: formatPercent(Math.abs(report.backtest_risk.worst_max_drawdown)) },
+  ];
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-semibold">模拟盘准备度报告</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {report.portfolio_id} / {report.window_start} 至 {report.window_end}
+          </p>
+        </div>
+        <span className={cn("inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs", statusTone)}>
+          {report.status === "ready" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+          {readinessStatusLabel(report.status)}
+        </span>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((item) => (
+          <div key={item.label} className="rounded-lg border bg-muted/20 p-3">
+            <dt className="text-xs text-muted-foreground">{item.label}</dt>
+            <dd className="mt-1 font-medium">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">建议</p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            {recommendationLabel(report.recommendation)}
+          </p>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">执行率</p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            失败 {formatPercent(report.rates.failed_rate)} / 缺失 {formatPercent(report.rates.missing_report_rate)} / 偏差 {formatPercent(report.rates.deviation_rate)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted/30 text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">检查项</th>
+              <th className="px-3 py-2 font-medium">状态</th>
+              <th className="px-3 py-2 font-medium">结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.checks.map((check) => (
+              <tr key={check.name} className="border-t">
+                <td className="px-3 py-2 font-medium text-foreground">{check.name}</td>
+                <td className="px-3 py-2 text-muted-foreground">{checkStatusLabel(check.status)}</td>
+                <td className="px-3 py-2 text-muted-foreground">{check.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+        <p className="font-medium text-foreground">发现</p>
+        <ul className="mt-2 space-y-1">
+          {report.findings.map((finding) => (
+            <li key={finding}>{finding}</li>
+          ))}
+        </ul>
+      </div>
+
+      {report.daily_summaries.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-lg border">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">信号日</th>
+                <th className="px-3 py-2 font-medium">交易日</th>
+                <th className="px-3 py-2 font-medium">报告</th>
+                <th className="px-3 py-2 font-medium">失败</th>
+                <th className="px-3 py-2 font-medium">偏差</th>
+                <th className="px-3 py-2 font-medium">状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.daily_summaries.map((row) => (
+                <tr key={`${row.signal_date}-${row.trade_date}`} className="border-t">
+                  <td className="px-3 py-2 font-medium text-foreground">{row.signal_date}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{row.trade_date}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{row.report_count}/{row.signal_count}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{row.failed_count}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.max_abs_weight_diff)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{readinessStatusLabel(row.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function JoinQuantExport() {
   const [portfolioId, setPortfolioId] = useState("cn_a_main");
   const [signalDate, setSignalDate] = useState("");
@@ -367,8 +526,20 @@ export function JoinQuantExport() {
   const [reportError, setReportError] = useState("");
   const [reportSummary, setReportSummary] = useState<JoinQuantExecutionReportSummary | null>(null);
   const [reportRows, setReportRows] = useState<JoinQuantExecutionReport[]>([]);
+  const [readinessPortfolioId, setReadinessPortfolioId] = useState("cn_a_main");
+  const [readinessLookbackDays, setReadinessLookbackDays] = useState("90");
+  const [readinessMinBatches, setReadinessMinBatches] = useState("20");
+  const [readinessTolerance, setReadinessTolerance] = useState("0.01");
+  const [readinessAction, setReadinessAction] = useState<ReadinessAction>(null);
+  const [readinessState, setReadinessState] = useState<ReportState>({
+    status: "idle",
+    message: "尚未生成准备度报告",
+  });
+  const [readinessError, setReadinessError] = useState("");
+  const [readinessReport, setReadinessReport] = useState<JoinQuantSimulationReadinessReport | null>(null);
   const operationSeq = useRef(0);
   const reportSeq = useRef(0);
+  const readinessSeq = useRef(0);
 
   const payload = useMemo<JoinQuantExportRequest>(() => ({
     portfolio_id: portfolioId.trim() || "cn_a_main",
@@ -550,9 +721,41 @@ export function JoinQuantExport() {
     }
   }
 
+  function readinessQuery() {
+    return {
+      portfolio_id: readinessPortfolioId.trim() || "cn_a_main",
+      lookback_days: parseBoundedInteger(readinessLookbackDays, "观察天数", 1, 365),
+      min_batches: parseBoundedInteger(readinessMinBatches, "最低批次", 1, 250),
+      tolerance: parseBoundedNumber(readinessTolerance, "偏差容忍度", 0, 1),
+    };
+  }
+
+  async function generateReadinessReport() {
+    const operationId = readinessSeq.current + 1;
+    readinessSeq.current = operationId;
+    setReadinessAction("readiness");
+    setReadinessError("");
+    try {
+      const result = await api.joinQuantSimulationReadiness(readinessQuery());
+      if (operationId !== readinessSeq.current) return;
+      setReadinessReport(result);
+      setReadinessState({
+        status: result.status === "ready" ? "success" : "failed",
+        message: `准备度结论：${readinessStatusLabel(result.status)}。`,
+      });
+    } catch (err) {
+      if (operationId !== readinessSeq.current) return;
+      setReadinessState({ status: "failed", message: "准备度报告生成失败" });
+      setReadinessError(errorMessage(err));
+    } finally {
+      if (operationId === readinessSeq.current) setReadinessAction(null);
+    }
+  }
+
   const preflightReady = preflight?.copy_ready;
   const isBusy = loadingAction !== null;
   const reportBusy = reportAction !== null;
+  const readinessBusy = readinessAction !== null;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -872,6 +1075,93 @@ export function JoinQuantExport() {
 
       {reportSummary ? <ExecutionSummaryPanel summary={reportSummary} /> : null}
       <ExecutionReportTable reports={reportRows} />
+
+      <section className="rounded-lg border bg-card p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">模拟盘准备度</h2>
+            </div>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
+              汇总最近聚宽模拟执行、回报缺失、仓位偏差、信号延迟和回测回撤证据。
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-md border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            不构成实盘指令
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-4">
+          <label className="grid gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">准备度组合 ID</span>
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+              value={readinessPortfolioId}
+              onChange={(event) => setReadinessPortfolioId(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">观察天数</span>
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+              inputMode="numeric"
+              value={readinessLookbackDays}
+              onChange={(event) => setReadinessLookbackDays(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">最低批次</span>
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+              inputMode="numeric"
+              value={readinessMinBatches}
+              onChange={(event) => setReadinessMinBatches(event.target.value)}
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">准备度偏差容忍度</span>
+            <input
+              className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+              inputMode="decimal"
+              value={readinessTolerance}
+              onChange={(event) => setReadinessTolerance(event.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className={cn(
+            "rounded-lg border p-3 text-xs leading-5 md:flex-1",
+            readinessState.status === "failed"
+              ? "border-warning/30 bg-warning/5 text-muted-foreground"
+              : "bg-muted/20 text-muted-foreground",
+          )}>
+            <p className="font-medium text-foreground">{readinessState.message}</p>
+            {readinessError ? <p className="mt-1 text-destructive">{readinessError}</p> : null}
+          </div>
+
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={readinessBusy}
+            onClick={generateReadinessReport}
+            type="button"
+          >
+            {readinessAction === "readiness" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Gauge className="h-4 w-4" />
+            )}
+            生成准备度报告
+          </button>
+        </div>
+      </section>
+
+      {readinessReport ? <ReadinessReportPanel report={readinessReport} /> : null}
     </div>
   );
 }
