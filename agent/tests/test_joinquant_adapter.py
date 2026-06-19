@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import api_server
 from src.ashare_data.store import AShareDataStore
-from src.joinquant_adapter.mapper.code_mapper import JoinQuantMappingError, map_ticker
+from src.joinquant_adapter.mapper.code_mapper import JoinQuantMappingError, map_ticker, unmap_ticker
 from src.joinquant_adapter.service import JoinQuantExportError, JoinQuantExportService
 
 pytest.importorskip("duckdb")
@@ -69,9 +69,14 @@ def test_joinquant_ticker_mapping_examples() -> None:
     assert map_ticker("300750.SZ") == "300750.XSHE"
     assert map_ticker("000001.SH") == "000001.XSHG"
     assert map_ticker("600519.XSHG") == "600519.XSHG"
+    assert unmap_ticker("600519.XSHG") == "600519.SH"
+    assert unmap_ticker("300750.XSHE") == "300750.SZ"
+    assert unmap_ticker("000001.SH") == "000001.SH"
 
     with pytest.raises(JoinQuantMappingError, match="暂不支持"):
         map_ticker("830000.BJ")
+    with pytest.raises(JoinQuantMappingError, match="暂不支持"):
+        unmap_ticker("830000.XBSE")
 
 
 def test_export_signals_json_maps_approved_targets(
@@ -207,6 +212,140 @@ def test_strategy_code_export_blocks_draft_signals(
         exporter.export_strategy_code(portfolio_id="cn_a_main", signal_date="2026-06-23")
 
 
+def test_import_execution_reports_maps_joinquant_tickers_and_summarizes(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    imported = exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        reports=[
+            {
+                "ticker": "600519.XSHG",
+                "order_status": "filled",
+                "executed_weight": 0.08,
+                "fill_price": 1688.5,
+                "fill_amount": 8000,
+            },
+            {
+                "ticker": "300750.XSHE",
+                "order_status": "rejected",
+                "executed_weight": 0,
+                "error_message": "涨停无法买入",
+            },
+            {
+                "ticker": "000001.XSHG",
+                "order_status": "held",
+                "executed_weight": 0.04,
+            },
+        ],
+    )
+    reports = exporter.list_execution_reports(portfolio_id="cn_a_main", signal_date="2026-06-23")
+    summary = exporter.execution_report_summary(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+    )
+
+    assert imported["status"] == "needs_review"
+    assert imported["imported_count"] == 3
+    assert {row["ticker"] for row in reports} == {"600519.SH", "300750.SZ", "000001.SH"}
+    assert reports[0]["raw_report"]
+    assert summary["failed_count"] == 1
+    assert summary["matched_signal_count"] == 3
+    assert summary["missing_report_count"] == 0
+    assert summary["max_abs_weight_diff"] == pytest.approx(0.07)
+    assert summary["action_required"] is True
+    assert summary["research_only"] is True
+    assert summary["live_trading"] is False
+
+    with store.connect(read_only=True) as conn:
+        signal_rows = conn.execute(
+            """
+            SELECT ticker, status
+            FROM execution_signals
+            WHERE portfolio_id = 'cn_a_main' AND signal_date = DATE '2026-06-23'
+            """
+        ).fetchall()
+    signals = {row[0]: row[1] for row in signal_rows}
+    assert signals["600519.SH"] == "executed"
+    assert signals["000001.SH"] == "executed"
+    assert signals["300750.SZ"] == "approved"
+
+
+def test_import_execution_reports_can_replace_existing_trade_date(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {"ticker": "300750.XSHE", "order_status": "filled", "executed_weight": 0.07},
+        ],
+    )
+    replaced = exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        replace=True,
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+        ],
+    )
+    reports = exporter.list_execution_reports(portfolio_id="cn_a_main", signal_date="2026-06-23")
+
+    assert replaced["replace"] is True
+    assert len(reports) == 1
+    assert reports[0]["ticker"] == "600519.SH"
+
+
+def test_import_execution_reports_rejects_unmapped_ticker(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    with pytest.raises(JoinQuantExportError, match="暂不支持"):
+        exporter.import_execution_reports(
+            portfolio_id="cn_a_main",
+            signal_date="2026-06-23",
+            trade_date="2026-06-24",
+            reports=[{"ticker": "830000.XBSE", "order_status": "filled", "executed_weight": 0.01}],
+        )
+
+
+def test_import_execution_reports_rejects_mixed_batches(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    with pytest.raises(JoinQuantExportError, match="同一 portfolio_id、signal_date 和 trade_date"):
+        exporter.import_execution_reports(
+            portfolio_id="cn_a_main",
+            signal_date="2026-06-23",
+            trade_date="2026-06-24",
+            reports=[
+                {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+                {
+                    "ticker": "300750.XSHE",
+                    "signal_date": "2026-06-23",
+                    "trade_date": "2026-06-25",
+                    "order_status": "filled",
+                    "executed_weight": 0.07,
+                },
+            ],
+        )
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("ASHARE_DATA_ROOT", str(tmp_path / "runtime"))
@@ -261,3 +400,38 @@ def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     assert copy_package.status_code == 200
     assert copy_package.json()["manifest"]["target_count"] == 3
     assert copy_package.json()["manifest"]["live_trading"] is False
+
+    report_import = client.post(
+        "/api/joinquant/execution-reports/import",
+        json={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "trade_date": "2026-06-24",
+            "reports": [
+                {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+                {"ticker": "300750.XSHE", "order_status": "filled", "executed_weight": 0.07},
+                {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+            ],
+        },
+    )
+    assert report_import.status_code == 200
+    assert report_import.json()["summary"]["status"] == "ok"
+    assert report_import.json()["live_trading"] is False
+
+    report_list = client.get(
+        "/api/joinquant/execution-reports",
+        params={"portfolio_id": "cn_a_main", "signal_date": "2026-06-23"},
+    )
+    assert report_list.status_code == 200
+    assert report_list.json()["count"] == 3
+
+    report_summary = client.get(
+        "/api/joinquant/execution-reports/summary",
+        params={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "trade_date": "2026-06-24",
+        },
+    )
+    assert report_summary.status_code == 200
+    assert report_summary.json()["action_required"] is False
