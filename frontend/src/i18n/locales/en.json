@@ -83,10 +83,10 @@
     "disconnected": "Connection lost"
   },
   "welcome": {
-    "title": "Vibe-Trading",
+    "title": "A 股事件驱动策略中台",
     "subtitle": "vibe trading with your professional financial agent team",
     "describePrompt": "Describe a trading strategy to get started.",
-    "tryExample": "Try an example:",
+    "tryExample": "试试这些 A 股研究任务：",
     "categories": {
       "multiMarketBacktest": "Multi-Market Backtest",
       "researchAnalysis": "Research & Analysis",
@@ -312,7 +312,7 @@
   "correlation": {
     "title": "Correlation Matrix",
     "assetCodes": "Asset codes",
-    "assetCodesHint": "Comma-separated ticker symbols, e.g. BTC-USDT,ETH-USDT,AAPL,SPY",
+    "assetCodesHint": "仅支持沪深 A 股代码，例如 600519.SH、300750.SZ、000001.SZ。",
     "windowDays": "Window (days)",
     "method": "Method",
     "compute": "Compute",
