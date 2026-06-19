@@ -163,7 +163,7 @@ def test_daily_workflow_runs_full_local_research_chain(
     steps = {step["name"]: step for step in result["steps"]}
     assert result["status"] == "ok"
     assert result["blocked_step"] is None
-    assert result["completed_step_count"] == 10
+    assert result["completed_step_count"] == 11
     assert result["research_only"] is True
     assert result["live_trading"] is False
     assert steps["collect_documents"]["metrics"]["inserted"] == 1
@@ -175,12 +175,15 @@ def test_daily_workflow_runs_full_local_research_chain(
     assert steps["rank_backtests"]["metrics"]["ranking_count"] == 4
     assert steps["allocate_portfolio"]["metrics"]["allocation_count"] >= 1
     assert steps["generate_draft_signals"]["metrics"]["signals_written"] >= 1
+    assert steps["calculate_event_reactions"]["metrics"]["reactions_written"] >= 1
 
     with store.connect(read_only=True) as conn:
         statuses = conn.execute(
             "SELECT DISTINCT status FROM execution_signals ORDER BY status"
         ).fetchall()
+        reaction_count = conn.execute("SELECT COUNT(*) FROM event_reactions").fetchone()[0]
     assert statuses == [("draft",)]
+    assert reaction_count >= 1
 
 
 def test_daily_workflow_blocks_when_prerequisites_are_missing(service: DailyWorkflowService) -> None:
