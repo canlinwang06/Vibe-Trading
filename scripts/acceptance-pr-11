@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr11-backtest-factory.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "PR-11 acceptance failed: %s\n" "$1" >&2
+  exit 1
+}
+
+step "Run PR-11 backtest-factory tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_backtest_factory.py" "$ROOT/agent/tests/test_strategy_lab.py" -q
+
+step "Check strategy-lab backtest API routes are mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/strategy-lab/backtest-batch",
+    "/api/strategy-lab/backtest-runs",
+    "/api/strategy-lab/backtest-runs/{run_id}",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing strategy-lab backtest API routes: {missing}")
+PY
+
+printf "\nPR-11 acceptance passed.\n"
