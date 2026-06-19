@@ -25,6 +25,23 @@ class PortfolioAllocateRequest(BaseModel):
     min_strategy_score: float = Field(default=0.0, ge=0.0, le=100.0)
 
 
+class GenerateSignalsRequest(BaseModel):
+    portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
+    signal_date: str | None = Field(default=None, min_length=10, max_length=10)
+    valid_for: str | None = Field(default=None, min_length=10, max_length=10)
+    current_positions: dict[str, float] = Field(default_factory=dict)
+    replace: bool = True
+    max_single_stock_weight: float = Field(default=0.12, ge=0.01, le=0.30)
+    max_sector_weight: float = Field(default=0.40, ge=0.05, le=0.80)
+
+
+class ApprovePlanRequest(BaseModel):
+    portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
+    signal_date: str | None = Field(default=None, min_length=10, max_length=10)
+    confirm_risk: bool = False
+    simulation_only: bool = True
+
+
 def _service() -> PortfolioRiskService:
     return PortfolioRiskService()
 
@@ -96,6 +113,51 @@ def register_portfolio_risk_routes(app: FastAPI, require_local_or_auth: AuthDep 
                 as_of_date=as_of_date,
                 max_single_stock_weight=max_single_stock_weight,
                 max_sector_weight=max_sector_weight,
+            )
+        except PortfolioRiskError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/portfolio-risk/generate-signals", dependencies=[Depends(auth)])
+    def generate_draft_signals(payload: GenerateSignalsRequest) -> dict[str, Any]:
+        try:
+            return _service().generate_draft_signals(
+                portfolio_id=payload.portfolio_id,
+                signal_date=payload.signal_date,
+                valid_for=payload.valid_for,
+                current_positions=payload.current_positions,
+                replace=payload.replace,
+                max_single_stock_weight=payload.max_single_stock_weight,
+                max_sector_weight=payload.max_sector_weight,
+            )
+        except PortfolioRiskError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/portfolio-risk/signals", dependencies=[Depends(auth)])
+    def list_execution_signals(
+        portfolio_id: str | None = Query(None, max_length=80),
+        signal_date: str | None = Query(None, min_length=10, max_length=10),
+        status: str | None = Query(None, max_length=40),
+        limit: int = Query(200, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            signals = _service().list_signals(
+                portfolio_id=portfolio_id,
+                signal_date=signal_date,
+                status=status,
+                limit=limit,
+            )
+        except PortfolioRiskError as exc:
+            raise _http_error(exc) from exc
+        return {"execution_signals": signals, "signal_count": len(signals)}
+
+    @app.post("/api/portfolio-risk/approve-plan", dependencies=[Depends(auth)])
+    def approve_trade_plan(payload: ApprovePlanRequest) -> dict[str, Any]:
+        try:
+            return _service().approve_plan(
+                portfolio_id=payload.portfolio_id,
+                signal_date=payload.signal_date,
+                confirm_risk=payload.confirm_risk,
+                simulation_only=payload.simulation_only,
             )
         except PortfolioRiskError as exc:
             raise _http_error(exc) from exc
