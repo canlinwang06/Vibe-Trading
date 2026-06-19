@@ -1,4 +1,4 @@
-"""Event radar source and raw-document routes for PR-05."""
+"""Event radar source, raw-document, and extraction routes."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.event_radar.event_extraction import EventExtractionError, EventExtractionService
 from src.event_radar.source_ingestion import (
     EventSourceIngestionError,
     EventSourceIngestionService,
@@ -51,8 +52,17 @@ class CollectRunRequest(BaseModel):
     documents: list[RawDocumentPayload] = Field(..., min_length=1, max_length=100)
 
 
+class ExtractRunRequest(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    min_relevance: float = Field(default=0.0, ge=0, le=1)
+
+
 def _service() -> EventSourceIngestionService:
     return EventSourceIngestionService()
+
+
+def _extractor() -> EventExtractionService:
+    return EventExtractionService()
 
 
 def _resolve_auth(require_local_or_auth: AuthDep | None) -> AuthDep:
@@ -71,8 +81,12 @@ def _http_error(exc: EventSourceIngestionError, status_code: int = 400) -> HTTPE
     return HTTPException(status_code=status_code, detail=str(exc))
 
 
+def _event_http_error(exc: EventExtractionError, status_code: int = 400) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=str(exc))
+
+
 def register_event_radar_routes(app: FastAPI, require_local_or_auth: AuthDep | None = None) -> None:
-    """Mount PR-05 event radar source and raw-document endpoints."""
+    """Mount event radar collection, extraction, and query endpoints."""
     auth = _resolve_auth(require_local_or_auth)
 
     @app.get("/api/event-radar/sources", dependencies=[Depends(auth)])
@@ -105,3 +119,49 @@ def register_event_radar_routes(app: FastAPI, require_local_or_auth: AuthDep | N
             return _service().ingest_documents(document.to_record() for document in payload.documents)
         except EventSourceIngestionError as exc:
             raise _http_error(exc) from exc
+
+    @app.post("/api/event-radar/extract/run", dependencies=[Depends(auth)])
+    def run_event_extraction(payload: ExtractRunRequest) -> dict[str, Any]:
+        try:
+            return _extractor().extract_events(limit=payload.limit, min_relevance=payload.min_relevance)
+        except EventExtractionError as exc:
+            raise _event_http_error(exc) from exc
+
+    @app.get("/api/event-radar/events", dependencies=[Depends(auth)])
+    def list_events(
+        limit: int = Query(50, ge=1, le=200),
+        event_type: str | None = Query(None),
+        min_relevance: float = Query(0.0, ge=0, le=1),
+    ) -> dict[str, Any]:
+        try:
+            events = _extractor().list_events(
+                limit=limit,
+                event_type=event_type,
+                min_relevance=min_relevance,
+            )
+        except EventExtractionError as exc:
+            raise _event_http_error(exc) from exc
+        return {"events": events, "event_count": len(events)}
+
+    @app.get("/api/event-radar/clusters", dependencies=[Depends(auth)])
+    def list_clusters(
+        limit: int = Query(50, ge=1, le=200),
+        status: str | None = Query(None),
+        min_relevance: float = Query(0.0, ge=0, le=1),
+    ) -> dict[str, Any]:
+        try:
+            clusters = _extractor().list_clusters(
+                limit=limit,
+                status=status,
+                min_relevance=min_relevance,
+            )
+        except EventExtractionError as exc:
+            raise _event_http_error(exc) from exc
+        return {"clusters": clusters, "cluster_count": len(clusters)}
+
+    @app.get("/api/event-radar/clusters/{cluster_id}", dependencies=[Depends(auth)])
+    def get_cluster(cluster_id: str) -> dict[str, Any]:
+        try:
+            return _extractor().get_cluster(cluster_id)
+        except EventExtractionError as exc:
+            raise _event_http_error(exc, status_code=404) from exc
