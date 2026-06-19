@@ -35,7 +35,7 @@ const CandidatePool = lazy(() =>
   import("@/pages/CandidatePool").then((m) => ({ default: m.CandidatePool })),
 );
 const StrategyLab = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.StrategyLab })),
+  import("@/pages/StrategyLab").then((m) => ({ default: m.StrategyLab })),
 );
 const BacktestResults = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.BacktestResults })),
