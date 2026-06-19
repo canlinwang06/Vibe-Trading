@@ -137,6 +137,76 @@ def test_unsupported_ticker_blocks_joinquant_export(
     assert "暂不支持该交易所代码映射" in "；".join(preflight["validation"]["errors"])
 
 
+def test_export_strategy_code_is_complete_copyable_template(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    exported = exporter.export_strategy_code(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        strategy_id="cn_a_main_jq_test",
+    )
+    code = exported["python_code"]
+
+    assert exported["status"] == "ok"
+    assert exported["copy_ready"] is True
+    assert exported["live_trading"] is False
+    assert "# generated_by: Vibe-Trading Codex local JoinQuant adapter" in code
+    assert "# strategy_id: cn_a_main_jq_test" in code
+    assert "# risk_notice:" in code
+    assert "def initialize(context):" in code
+    assert "def before_trading_start(context):" in code
+    assert "def handle_data(context, data):" in code
+    assert "def map_a_share_ticker(ticker):" in code
+    assert "def _risk_gate(context):" in code
+    assert "def _can_trade(security, data):" in code
+    assert "SIGNAL_JSON" in code
+    assert "600519.XSHG" in code
+    assert "order_target_percent" in code
+
+
+def test_export_copy_package_contains_strategy_json_csv_and_readme(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+
+    package = exporter.export_copy_package(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        strategy_id="cn_a_main_jq_test",
+    )
+    filenames = {item["filename"] for item in package["files"]}
+    manifest_names = {item["filename"] for item in package["manifest"]["files"]}
+
+    assert package["status"] == "ok"
+    assert package["copy_ready"] is True
+    assert package["manual_confirmation_required"] is True
+    assert package["live_trading"] is False
+    assert filenames == {"strategy.py", "signals.json", "signals.csv", "README.md"}
+    assert manifest_names == filenames
+    assert package["manifest"]["target_count"] == 3
+    assert package["manifest"]["manual_confirmation_required"] is True
+    assert package["clipboard_text"] == next(
+        item["content"] for item in package["files"] if item["filename"] == "strategy.py"
+    )
+    assert "不会自动登录聚宽" in next(
+        item["content"] for item in package["files"] if item["filename"] == "README.md"
+    )
+
+
+def test_strategy_code_export_blocks_draft_signals(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store, status="draft")
+
+    with pytest.raises(JoinQuantExportError, match="导出前校验未通过"):
+        exporter.export_strategy_code(portfolio_id="cn_a_main", signal_date="2026-06-23")
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("ASHARE_DATA_ROOT", str(tmp_path / "runtime"))
@@ -168,3 +238,26 @@ def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     )
     assert csv_export.status_code == 200
     assert csv_export.json()["row_count"] == 3
+
+    strategy_code = client.post(
+        "/api/joinquant/export/strategy-code",
+        json={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "strategy_id": "cn_a_main_jq_test",
+        },
+    )
+    assert strategy_code.status_code == 200
+    assert "def initialize(context):" in strategy_code.json()["python_code"]
+
+    copy_package = client.post(
+        "/api/joinquant/export/copy-package",
+        json={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "strategy_id": "cn_a_main_jq_test",
+        },
+    )
+    assert copy_package.status_code == 200
+    assert copy_package.json()["manifest"]["target_count"] == 3
+    assert copy_package.json()["manifest"]["live_trading"] is False
