@@ -10,11 +10,14 @@ from pydantic import BaseModel, Field
 from src.joinquant_adapter.service import JoinQuantExportError, JoinQuantExportService
 
 AuthDep = Callable[..., Awaitable[Any] | Any]
+DEFAULT_RISK_NOTICE = "研究/模拟用途；复制到聚宽后必须人工确认风险，不能直接用于实盘。"
 
 
 class JoinQuantExportRequest(BaseModel):
     portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
     signal_date: str | None = Field(default=None, min_length=10, max_length=10)
+    strategy_id: str | None = Field(default=None, min_length=3, max_length=120)
+    risk_notice: str = Field(default=DEFAULT_RISK_NOTICE, max_length=300)
     require_approved: bool = True
 
 
@@ -70,6 +73,32 @@ def register_joinquant_routes(app: FastAPI, require_local_or_auth: AuthDep | Non
             return _service().export_signals_csv(
                 portfolio_id=payload.portfolio_id,
                 signal_date=payload.signal_date,
+                require_approved=payload.require_approved,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/joinquant/export/strategy-code", dependencies=[Depends(auth)])
+    def export_strategy_code(payload: JoinQuantExportRequest) -> dict[str, Any]:
+        try:
+            return _service().export_strategy_code(
+                portfolio_id=payload.portfolio_id,
+                signal_date=payload.signal_date,
+                strategy_id=payload.strategy_id,
+                risk_notice=payload.risk_notice,
+                require_approved=payload.require_approved,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/joinquant/export/copy-package", dependencies=[Depends(auth)])
+    def export_copy_package(payload: JoinQuantExportRequest) -> dict[str, Any]:
+        try:
+            return _service().export_copy_package(
+                portfolio_id=payload.portfolio_id,
+                signal_date=payload.signal_date,
+                strategy_id=payload.strategy_id,
+                risk_notice=payload.risk_notice,
                 require_approved=payload.require_approved,
             )
         except JoinQuantExportError as exc:

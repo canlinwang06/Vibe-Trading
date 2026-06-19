@@ -6,8 +6,13 @@ from datetime import date, datetime
 from typing import Any
 
 from src.ashare_data.store import AShareDataStore
+from src.joinquant_adapter.codegen.signal_executor_template import (
+    build_signal_executor_notes,
+    copy_package_manifest,
+)
 from src.joinquant_adapter.exporter.export_signal_csv import build_signal_csv_text
 from src.joinquant_adapter.exporter.export_signal_json import build_signal_json_payload, dumps_signal_json
+from src.joinquant_adapter.exporter.export_strategy import DEFAULT_RISK_NOTICE, build_strategy_export
 from src.joinquant_adapter.validator.jq_signal_validator import JoinQuantSignalValidator
 from src.portfolio_risk.service import PortfolioRiskService
 
@@ -127,6 +132,109 @@ class JoinQuantExportService:
             "live_trading": False,
         }
 
+    def export_strategy_code(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        signal_date: str | date | datetime | None = None,
+        strategy_id: str | None = None,
+        risk_notice: str = DEFAULT_RISK_NOTICE,
+        require_approved: bool = True,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        signal, _valid_for, validation, allocations = self._validated_export_context(
+            portfolio_id=portfolio_id,
+            signal_date=signal_date,
+            require_approved=require_approved,
+        )
+        payload = self._signal_payload(
+            portfolio_id=portfolio_id,
+            signal=signal,
+            validation=validation,
+            allocations=allocations,
+        )
+        resolved_strategy_id = strategy_id or self._default_strategy_id(portfolio_id, signal)
+        strategy_export = build_strategy_export(
+            payload=payload,
+            strategy_id=resolved_strategy_id,
+            risk_notice=risk_notice,
+        )
+        return {
+            "status": "ok",
+            "export_type": "strategy-code",
+            "portfolio_id": portfolio_id,
+            "signal_date": signal.isoformat(),
+            "strategy_id": resolved_strategy_id,
+            "filename": strategy_export["filename"],
+            "python_code": strategy_export["content"],
+            "risk_notice": strategy_export["risk_notice"],
+            "validation": self._public_validation(validation),
+            "copy_ready": True,
+            "manual_confirmation_required": True,
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def export_copy_package(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        signal_date: str | date | datetime | None = None,
+        strategy_id: str | None = None,
+        risk_notice: str = DEFAULT_RISK_NOTICE,
+        require_approved: bool = True,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        signal, _valid_for, validation, allocations = self._validated_export_context(
+            portfolio_id=portfolio_id,
+            signal_date=signal_date,
+            require_approved=require_approved,
+        )
+        payload = self._signal_payload(
+            portfolio_id=portfolio_id,
+            signal=signal,
+            validation=validation,
+            allocations=allocations,
+        )
+        resolved_strategy_id = strategy_id or self._default_strategy_id(portfolio_id, signal)
+        strategy_export = build_strategy_export(
+            payload=payload,
+            strategy_id=resolved_strategy_id,
+            risk_notice=risk_notice,
+        )
+        json_text = dumps_signal_json(payload)
+        csv_text = build_signal_csv_text(
+            portfolio_id=portfolio_id,
+            signal_date=signal.isoformat(),
+            valid_for=payload["valid_for"],
+            mapped_targets=validation["mapped_targets"],
+        )
+        files = [
+            strategy_export,
+            {"filename": "signals.json", "content_type": "application/json", "content": json_text},
+            {"filename": "signals.csv", "content_type": "text/csv", "content": csv_text},
+            {
+                "filename": "README.md",
+                "content_type": "text/markdown",
+                "content": build_signal_executor_notes(payload),
+            },
+        ]
+        return {
+            "status": "ok",
+            "export_type": "copy-package",
+            "portfolio_id": portfolio_id,
+            "signal_date": signal.isoformat(),
+            "strategy_id": resolved_strategy_id,
+            "manifest": copy_package_manifest(payload=payload, strategy_id=resolved_strategy_id, files=files),
+            "files": files,
+            "clipboard_text": strategy_export["content"],
+            "validation": self._public_validation(validation),
+            "copy_ready": True,
+            "manual_confirmation_required": True,
+            "research_only": True,
+            "live_trading": False,
+        }
+
     def _validated_export_context(
         self,
         *,
@@ -147,6 +255,23 @@ class JoinQuantExportService:
         allocations = portfolio.list_allocations(portfolio_id=portfolio_id, as_of_date=signal, limit=100)
         valid_for = self._valid_for(validation["mapped_targets"])
         return signal, valid_for, validation, allocations
+
+    def _signal_payload(
+        self,
+        *,
+        portfolio_id: str,
+        signal: date,
+        validation: dict[str, Any],
+        allocations: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        valid_for = self._valid_for(validation["mapped_targets"])
+        return build_signal_json_payload(
+            portfolio_id=portfolio_id,
+            signal_date=signal.isoformat(),
+            valid_for=valid_for,
+            strategy_allocations=allocations,
+            mapped_targets=validation["mapped_targets"],
+        )
 
     def _resolve_signal_date(
         self,
@@ -179,6 +304,11 @@ class JoinQuantExportService:
     def _valid_for(mapped_targets: list[dict[str, Any]]) -> str:
         dates = [str(row.get("valid_for") or "") for row in mapped_targets if row.get("valid_for")]
         return min(dates) if dates else ""
+
+    @staticmethod
+    def _default_strategy_id(portfolio_id: str, signal: date) -> str:
+        compact_date = signal.isoformat().replace("-", "")
+        return f"{portfolio_id}_jq_signal_executor_{compact_date}"
 
     @staticmethod
     def _public_validation(validation: dict[str, Any]) -> dict[str, Any]:
