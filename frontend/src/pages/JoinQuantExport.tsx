@@ -252,6 +252,107 @@ function PackageSummary({ copyPackage }: { copyPackage: JoinQuantCopyPackageResp
   );
 }
 
+function CopyReviewPanel({
+  copyPackage,
+  copyState,
+  requireApproved,
+  riskNotice,
+}: {
+  copyPackage: JoinQuantCopyPackageResponse;
+  copyState: CopyState;
+  requireApproved: boolean;
+  riskNotice: string;
+}) {
+  const manifest = copyPackage.manifest;
+  const strategyFile = copyPackage.files.find((file) => file.filename === "strategy.py");
+  const reviewItems = [
+    {
+      label: "代码映射检查",
+      value: copyPackage.validation.status === "ok" ? "通过" : "未通过",
+    },
+    {
+      label: "基础语法检查",
+      value: strategyFile ? "已生成 Python 策略文件" : "缺少 strategy.py",
+    },
+    {
+      label: "信号有效期检查",
+      value: manifest.valid_for || "未提供",
+    },
+    {
+      label: "导出状态限制",
+      value: requireApproved ? "仅 approved 信号" : "允许研究草案",
+    },
+  ];
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileSearch className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">复制前审阅</h2>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            复制到聚宽前，先确认策略、目标持仓来源、校验结果和风险提示。
+          </p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-md border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5 text-success" />
+          人工复制
+        </span>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">策略名称</dt>
+          <dd className="mt-1 font-medium">{manifest.strategy_id}</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">股票池</dt>
+          <dd className="mt-1 font-medium">已映射目标 {manifest.target_count} 只</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">回测区间 / 信号窗口</dt>
+          <dd className="mt-1 font-medium">{manifest.signal_date} 至 {manifest.valid_for}</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">目标持仓来源</dt>
+          <dd className="mt-1 font-medium">本地 execution_signals / {manifest.portfolio_id}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {reviewItems.map((item) => (
+          <div key={item.label} className="rounded-lg border bg-background p-3">
+            <p className="text-xs text-muted-foreground">{item.label}</p>
+            <p className="mt-1 text-sm font-medium">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">风险提示</p>
+          <p className="mt-2 leading-5 text-muted-foreground">{riskNotice || DEFAULT_RISK_NOTICE}</p>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">复制内容摘要和校验结果</p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            strategy.py {strategyFile?.content.length ?? 0} 字符，信号 {copyPackage.validation.checked_count} 条，
+            错误 {copyPackage.validation.error_count} 个，提醒 {copyPackage.validation.warning_count} 个。
+          </p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            最近复制时间：{copyState.status === "success" ? copyState.copiedAt : "尚未复制"}
+          </p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            兜底下载：Download Python Strategy
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ExecutionSummaryPanel({ summary }: { summary: JoinQuantExecutionReportSummary }) {
   const needsReview = summary.status !== "ok" || summary.action_required;
   const metrics = [
@@ -938,6 +1039,15 @@ export function JoinQuantExport() {
           </div>
 
           {preflight ? <ValidationSummary validation={preflight.validation} /> : null}
+
+          {copyPackage ? (
+            <CopyReviewPanel
+              copyPackage={copyPackage}
+              copyState={copyState}
+              requireApproved={requireApproved}
+              riskNotice={riskNotice}
+            />
+          ) : null}
 
           {error ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm leading-6 text-destructive">
