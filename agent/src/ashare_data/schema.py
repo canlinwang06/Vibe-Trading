@@ -227,6 +227,28 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "event_reactions",
+        """
+        CREATE TABLE IF NOT EXISTS event_reactions (
+          reaction_id VARCHAR PRIMARY KEY,
+          cluster_id VARCHAR,
+          event_id VARCHAR,
+          target_type VARCHAR,
+          target_id VARCHAR,
+          target_name VARCHAR,
+          "window" VARCHAR,
+          raw_return DOUBLE,
+          benchmark_return DOUBLE,
+          sector_return DOUBLE,
+          abnormal_return DOUBLE,
+          max_drawdown DOUBLE,
+          volume_change DOUBLE,
+          breadth_change DOUBLE,
+          calculated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
         "market_daily",
         """
         CREATE TABLE IF NOT EXISTS market_daily (

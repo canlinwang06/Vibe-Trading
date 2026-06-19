@@ -24,6 +24,7 @@ EXPECTED_PR03_TABLES = (
     "sector_members",
     "event_sector_map",
     "event_stock_map",
+    "event_reactions",
     "market_daily",
     "sector_daily",
     "sector_scores",
@@ -119,6 +120,9 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     )
     assert {"report_id", "order_status", "raw_report", "error_message"}.issubset(
         store.table_columns("jq_execution_reports")
+    )
+    assert {"reaction_id", "window", "abnormal_return", "max_drawdown"}.issubset(
+        store.table_columns("event_reactions")
     )
 
 
