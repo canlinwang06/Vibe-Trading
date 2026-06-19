@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.event_radar.event_extraction import EventExtractionError, EventExtractionService
 from src.event_radar.event_mapping import EventMappingError, EventMappingService
+from src.event_radar.sector_scoring import SectorScoringError, SectorScoringService
 from src.event_radar.source_ingestion import (
     EventSourceIngestionError,
     EventSourceIngestionService,
@@ -63,6 +64,12 @@ class MapRunRequest(BaseModel):
     min_relevance: float = Field(default=0.45, ge=0, le=1)
 
 
+class SectorScoreRunRequest(BaseModel):
+    trade_date: str | None = Field(default=None, min_length=10, max_length=10)
+    limit: int = Field(default=10, ge=1, le=50)
+    min_relevance: float = Field(default=0.45, ge=0, le=1)
+
+
 def _service() -> EventSourceIngestionService:
     return EventSourceIngestionService()
 
@@ -73,6 +80,10 @@ def _extractor() -> EventExtractionService:
 
 def _mapper() -> EventMappingService:
     return EventMappingService()
+
+
+def _sector_scorer() -> SectorScoringService:
+    return SectorScoringService()
 
 
 def _resolve_auth(require_local_or_auth: AuthDep | None) -> AuthDep:
@@ -96,6 +107,10 @@ def _event_http_error(exc: EventExtractionError, status_code: int = 400) -> HTTP
 
 
 def _mapping_http_error(exc: EventMappingError, status_code: int = 400) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=str(exc))
+
+
+def _sector_score_http_error(exc: SectorScoringError, status_code: int = 400) -> HTTPException:
     return HTTPException(status_code=status_code, detail=str(exc))
 
 
@@ -219,3 +234,30 @@ def register_event_radar_routes(app: FastAPI, require_local_or_auth: AuthDep | N
         except EventMappingError as exc:
             raise _mapping_http_error(exc) from exc
         return {"stock_mappings": rows, "row_count": len(rows)}
+
+    @app.post("/api/event-radar/sector-scores/run", dependencies=[Depends(auth)])
+    def run_sector_scoring(payload: SectorScoreRunRequest) -> dict[str, Any]:
+        try:
+            return _sector_scorer().score_sectors(
+                trade_date=payload.trade_date,
+                limit=payload.limit,
+                min_relevance=payload.min_relevance,
+            )
+        except SectorScoringError as exc:
+            raise _sector_score_http_error(exc) from exc
+
+    @app.get("/api/event-radar/sector-scores", dependencies=[Depends(auth)])
+    def list_sector_scores(
+        trade_date: str | None = Query(None, min_length=10, max_length=10),
+        limit: int = Query(10, ge=1, le=50),
+        min_score: float = Query(0.0, ge=0, le=1),
+    ) -> dict[str, Any]:
+        try:
+            rows = _sector_scorer().list_sector_scores(
+                trade_date=trade_date,
+                limit=limit,
+                min_score=min_score,
+            )
+        except SectorScoringError as exc:
+            raise _sector_score_http_error(exc) from exc
+        return {"sector_scores": rows, "row_count": len(rows)}
