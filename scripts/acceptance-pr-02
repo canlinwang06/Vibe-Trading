@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "PR-02 acceptance failed: %s\n" "$1" >&2
+  exit 1
+}
+
+step "Check PR-02 A-share product shell tests"
+npm --prefix "$ROOT/frontend" run test:run -- \
+  ashareNavigation.test.ts \
+  Home.test.tsx \
+  Layout.test.tsx \
+  ConnectionBanner.test.tsx
+
+step "Check A-share shell copy"
+if rg -n "crypto|AAPL|BTC|Options Greeks|US equities|Trading Connectors|美股|港股|加密货币|期权|外汇|期货|全球资产配置|直接券商交易" \
+  "$ROOT/frontend/src/components/layout/Layout.tsx" \
+  "$ROOT/frontend/src/pages/Home.tsx" \
+  "$ROOT/frontend/src/pages/AsharePlaceholder.tsx" \
+  "$ROOT/frontend/src/config/ashareNavigation.ts" \
+  "$ROOT/frontend/src/i18n/locales/zh-CN.json" \
+  "$ROOT/frontend/src/i18n/locales/en.json"; then
+  fail "legacy multi-market copy remains in PR-02 product shell"
+fi
+
+printf "\nPR-02 acceptance passed.\n"

@@ -22,11 +22,38 @@ const Correlation = lazy(() =>
 const AlphaZoo = lazy(() =>
   import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
 );
+const EventRadar = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.EventRadar })),
+);
+const SectorRadar = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.SectorRadar })),
+);
+const CandidatePool = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.CandidatePool })),
+);
+const StrategyLab = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.StrategyLab })),
+);
+const BacktestResults = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.BacktestResults })),
+);
+const RiskPortfolio = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.RiskPortfolio })),
+);
+const TradePlan = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.TradePlan })),
+);
+const JoinQuantExport = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.JoinQuantExport })),
+);
+const DataSources = lazy(() =>
+  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.DataSources })),
+);
 
 function PageLoader() {
   return (
     <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-      Loading…
+      正在加载…
     </div>
   );
 }
@@ -44,6 +71,15 @@ export const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: "/", element: wrap(Home) },
+      { path: "/event-radar", element: wrap(EventRadar) },
+      { path: "/sector-radar", element: wrap(SectorRadar) },
+      { path: "/candidate-pool", element: wrap(CandidatePool) },
+      { path: "/strategy-lab", element: wrap(StrategyLab) },
+      { path: "/backtest-results", element: wrap(BacktestResults) },
+      { path: "/risk-portfolio", element: wrap(RiskPortfolio) },
+      { path: "/trade-plan", element: wrap(TradePlan) },
+      { path: "/joinquant-export", element: wrap(JoinQuantExport) },
+      { path: "/data-sources", element: wrap(DataSources) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/settings", element: wrap(Settings) },
