@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-24 event reaction tests"
+"$ROOT/.venv/bin/python" -m pytest \
+  "$ROOT/agent/tests/test_event_reactions.py" \
+  "$ROOT/agent/tests/test_ashare_data_store.py" \
+  -q
+
+step "Check event reaction API wiring and guardrails"
+python3 - "$ROOT" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+service = (root / "agent/src/event_reactions/service.py").read_text(encoding="utf-8")
+routes = (root / "agent/src/api/event_reaction_routes.py").read_text(encoding="utf-8")
+schema = (root / "agent/src/ashare_data/schema.py").read_text(encoding="utf-8")
+api_server = (root / "agent/api_server.py").read_text(encoding="utf-8")
+tests = (root / "agent/tests/test_event_reactions.py").read_text(encoding="utf-8")
+
+required = [
+    ("event_reactions table exists", "event_reactions" in schema),
+    ("default windows are explicit", "DEFAULT_REACTION_WINDOWS" in service),
+    ("calculate route exists", '"/api/event-reactions/calculate"' in routes),
+    ("list route exists", '"/api/event-reactions"' in routes),
+    ("summary route exists", '"/api/event-reactions/summary"' in routes),
+    ("route is registered", "register_event_reaction_routes" in api_server),
+    ("AI policy T+5 summary coverage exists", "ai_policy_t5_average" in tests),
+    ("research guardrail is returned", '"research_only": True' in service),
+    ("live trading is disabled", '"live_trading": False' in service),
+]
+forbidden = [
+    ("OPENAI_API_KEY must not be used", "OPENAI_API_KEY"),
+    ("browser automation must not be added", "playwright"),
+    ("Selenium automation must not be added", "selenium"),
+    ("JoinQuant remote URL must not be added", "joinquant.com"),
+    ("approval must not be called", "approve_plan"),
+    ("live trading must not be called", "live_trading=True"),
+    ("broker action must not be added", "place_order"),
+]
+
+missing = [label for label, ok in required if not ok]
+scanned = "\n".join([service, routes])
+violations = [label for label, token in forbidden if token in scanned]
+
+if missing or violations:
+    if missing:
+        print("missing:", missing, file=sys.stderr)
+    if violations:
+        print("violations:", violations, file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+printf "\nPR-24 acceptance passed.\n"
