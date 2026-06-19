@@ -3311,6 +3311,9 @@ register_candidate_pool_routes(app, require_local_or_auth=require_local_or_auth)
 from src.api.strategy_lab_routes import register_strategy_lab_routes  # noqa: E402
 register_strategy_lab_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.portfolio_risk_routes import register_portfolio_risk_routes  # noqa: E402
+register_portfolio_risk_routes(app, require_local_or_auth=require_local_or_auth)
+
 
 # ============================================================================
 # Main Entry Point
