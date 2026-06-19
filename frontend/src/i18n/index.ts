@@ -12,10 +12,9 @@ i18n
       en: { translation: en },
       "zh-CN": { translation: zhCN },
     },
-    // Default to English for everyone on first visit; only an explicit toggle
-    // (persisted to localStorage) switches to Chinese. We intentionally do NOT
-    // read `navigator` so a zh browser is not auto-switched away from English.
-    fallbackLng: "en",
+    // PR-02 product shell defaults to Chinese for the A-share research workflow.
+    // The language toggle still persists an explicit user choice in localStorage.
+    fallbackLng: "zh-CN",
     interpolation: { escapeValue: false },
     detection: {
       order: ["localStorage"],

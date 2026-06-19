@@ -29,7 +29,7 @@ describe("ThinkingTimeline", () => {
     ];
 
     render(<ThinkingTimeline messages={msgs} />);
-    expect(screen.getByText(/Done · 1 steps/)).toBeInTheDocument();
+    expect(screen.getByText(/完成 · 1 个步骤/)).toBeInTheDocument();
     expect(screen.getByText(/3\.2s/)).toBeInTheDocument();
   });
 
@@ -39,7 +39,7 @@ describe("ThinkingTimeline", () => {
     ];
 
     render(<ThinkingTimeline messages={msgs} isLatest />);
-    expect(screen.getByText(/Running Run backtest/)).toBeInTheDocument();
+    expect(screen.getByText(/运行中 Run backtest/)).toBeInTheDocument();
   });
 
   it("expands and collapses on click", async () => {
@@ -69,7 +69,7 @@ describe("ThinkingTimeline", () => {
 
     render(<ThinkingTimeline messages={msgs} isLatest />);
     // Error state should be visible in summary
-    expect(screen.getByText(/Done · 1 steps/)).toBeInTheDocument();
+    expect(screen.getByText(/完成 · 1 个步骤/)).toBeInTheDocument();
   });
 
   it("shows thinking content when expanded with no tools", async () => {
@@ -107,7 +107,7 @@ describe("ThinkingTimeline", () => {
     ];
 
     render(<ThinkingTimeline messages={msgs} />);
-    expect(screen.getByText(/Done · 3 steps/)).toBeInTheDocument();
+    expect(screen.getByText(/完成 · 3 个步骤/)).toBeInTheDocument();
     expect(screen.getByText(/5\.7s/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button"));
