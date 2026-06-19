@@ -233,6 +233,30 @@ export const api = {
     const qs = q.toString();
     return request<BacktestRankingResponse>(`/api/strategy-lab/backtest-rankings${qs ? `?${qs}` : ""}`);
   },
+  allocateRiskPortfolio: (body: PortfolioAllocateRequest) =>
+    request<PortfolioAllocationResponse>("/api/portfolio-risk/allocate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listRiskPortfolioAllocations: (params: PortfolioAllocationQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<PortfolioAllocationListResponse>(`/api/portfolio-risk/allocations${qs ? `?${qs}` : ""}`);
+  },
+  getRiskTradePlan: (params: PortfolioTradePlanQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.max_single_stock_weight !== undefined) {
+      q.set("max_single_stock_weight", String(params.max_single_stock_weight));
+    }
+    if (params.max_sector_weight !== undefined) q.set("max_sector_weight", String(params.max_sector_weight));
+    const qs = q.toString();
+    return request<PortfolioTradePlanResponse>(`/api/portfolio-risk/trade-plan${qs ? `?${qs}` : ""}`);
+  },
   listCandidatePool: (params: CandidatePoolQuery = {}) => {
     const q = new URLSearchParams();
     if (params.as_of_date) q.set("as_of_date", params.as_of_date);
@@ -905,6 +929,110 @@ export interface BacktestRankingResponse {
   rankings: BacktestRanking[];
   ranking_count: number;
   scoring_model: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type MarketRegime = "strong_trend" | "normal" | "weak" | "extreme_risk" | string;
+
+export interface PortfolioAllocateRequest {
+  portfolio_id?: string;
+  as_of_date?: string | null;
+  top_n?: number;
+  market_regime?: MarketRegime;
+  current_drawdown?: number;
+  signal_confidence?: number;
+  max_strategy_weight?: number;
+  min_strategy_weight?: number;
+  max_strategy_type_weight?: number;
+  min_strategy_score?: number;
+}
+
+export interface PortfolioAllocation {
+  as_of_date?: string | null;
+  portfolio_id: string;
+  strategy_id: string;
+  strategy_score: number;
+  risk_score: number;
+  volatility: number;
+  correlation_penalty: number;
+  allocated_weight: number;
+  reason: string;
+  created_at?: string | null;
+  strategy_name: string;
+  strategy_type: string;
+}
+
+export interface PortfolioRiskRule {
+  threshold: number;
+  action: string;
+  triggered: boolean;
+}
+
+export interface PortfolioAllocationResponse {
+  status: "draft" | "risk_off" | string;
+  portfolio_id: string;
+  as_of_date: string;
+  market_regime: string;
+  model_total_exposure: number;
+  allocated_exposure: number;
+  cash_weight: number;
+  allocation_count: number;
+  strategy_allocations: PortfolioAllocation[];
+  constraints: Record<string, unknown>;
+  risk_rules: PortfolioRiskRule[];
+  requires_human_confirmation: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface PortfolioAllocationQuery {
+  portfolio_id?: string | null;
+  as_of_date?: string | null;
+  limit?: number;
+}
+
+export interface PortfolioAllocationListResponse {
+  strategy_allocations: PortfolioAllocation[];
+  allocation_count: number;
+}
+
+export interface PortfolioTradePlanQuery {
+  portfolio_id?: string | null;
+  as_of_date?: string | null;
+  max_single_stock_weight?: number;
+  max_sector_weight?: number;
+}
+
+export interface PortfolioTargetPosition {
+  ticker: string;
+  ticker_name: string;
+  target_weight: number;
+  current_weight: number;
+  action: string;
+  strategy_sources: string[];
+  theme?: string | null;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  reason: string;
+  risk: string;
+}
+
+export interface PortfolioTradePlanResponse {
+  status: string;
+  portfolio_id: string;
+  as_of_date: string;
+  target_total_exposure: number;
+  strategy_allocated_exposure: number;
+  cash_weight: number;
+  strategy_allocations: PortfolioAllocation[];
+  target_positions: PortfolioTargetPosition[];
+  risk_limits: {
+    max_single_stock_weight: number;
+    max_sector_weight: number;
+  };
+  requires_human_confirmation: boolean;
+  approval_status: string;
   research_only: boolean;
   live_trading: boolean;
 }
