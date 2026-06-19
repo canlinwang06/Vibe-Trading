@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr18-joinquant-execution-import.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-18 JoinQuant execution-report import tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_joinquant_adapter.py" -q
+
+step "Check JoinQuant execution-report API routes are mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/joinquant/execution-reports/import",
+    "/api/joinquant/execution-reports",
+    "/api/joinquant/execution-reports/summary",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing JoinQuant execution-report API routes: {missing}")
+PY
+
+step "Check PR-18 guardrails"
+if rg -n "OPENAI_API_KEY|joinquant\\.com|window\\.open|playwright|selenium" \
+  "$ROOT/agent/src/joinquant_adapter" \
+  "$ROOT/agent/src/api/joinquant_routes.py"; then
+  printf "PR-18 acceptance failed: forbidden paid-key or JoinQuant automation surface found\n" >&2
+  exit 1
+fi
+
+printf "\nPR-18 acceptance passed.\n"

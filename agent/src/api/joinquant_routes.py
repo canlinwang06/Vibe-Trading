@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.joinquant_adapter.service import JoinQuantExportError, JoinQuantExportService
@@ -19,6 +19,14 @@ class JoinQuantExportRequest(BaseModel):
     strategy_id: str | None = Field(default=None, min_length=3, max_length=120)
     risk_notice: str = Field(default=DEFAULT_RISK_NOTICE, max_length=300)
     require_approved: bool = True
+
+
+class JoinQuantExecutionReportImportRequest(BaseModel):
+    portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
+    signal_date: str | None = Field(default=None, min_length=10, max_length=10)
+    trade_date: str | None = Field(default=None, min_length=10, max_length=10)
+    replace: bool = False
+    reports: list[dict[str, Any]] = Field(min_length=1, max_length=500)
 
 
 def _service() -> JoinQuantExportService:
@@ -100,6 +108,54 @@ def register_joinquant_routes(app: FastAPI, require_local_or_auth: AuthDep | Non
                 strategy_id=payload.strategy_id,
                 risk_notice=payload.risk_notice,
                 require_approved=payload.require_approved,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/joinquant/execution-reports/import", dependencies=[Depends(auth)])
+    def import_execution_reports(payload: JoinQuantExecutionReportImportRequest) -> dict[str, Any]:
+        try:
+            return _service().import_execution_reports(
+                portfolio_id=payload.portfolio_id,
+                signal_date=payload.signal_date,
+                trade_date=payload.trade_date,
+                replace=payload.replace,
+                reports=payload.reports,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/joinquant/execution-reports", dependencies=[Depends(auth)])
+    def list_execution_reports(
+        portfolio_id: str | None = Query(default=None, min_length=3, max_length=80),
+        signal_date: str | None = Query(default=None, min_length=10, max_length=10),
+        trade_date: str | None = Query(default=None, min_length=10, max_length=10),
+        limit: int = Query(default=200, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            reports = _service().list_execution_reports(
+                portfolio_id=portfolio_id,
+                signal_date=signal_date,
+                trade_date=trade_date,
+                limit=limit,
+            )
+            return {"status": "ok", "count": len(reports), "reports": reports}
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/joinquant/execution-reports/summary", dependencies=[Depends(auth)])
+    def summarize_execution_reports(
+        portfolio_id: str = Query(default="cn_a_main", min_length=3, max_length=80),
+        signal_date: str | None = Query(default=None, min_length=10, max_length=10),
+        trade_date: str | None = Query(default=None, min_length=10, max_length=10),
+        tolerance: float = Query(default=0.01, ge=0.0, le=1.0),
+    ) -> dict[str, Any]:
+        try:
+            return _service().execution_report_summary(
+                portfolio_id=portfolio_id,
+                signal_date=signal_date,
+                trade_date=trade_date,
+                tolerance=tolerance,
             )
         except JoinQuantExportError as exc:
             raise _http_error(exc) from exc
