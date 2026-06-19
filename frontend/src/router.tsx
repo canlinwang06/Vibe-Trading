@@ -44,7 +44,7 @@ const RiskPortfolio = lazy(() =>
   import("@/pages/RiskPortfolio").then((m) => ({ default: m.RiskPortfolio })),
 );
 const TradePlan = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.TradePlan })),
+  import("@/pages/TradePlan").then((m) => ({ default: m.TradePlan })),
 );
 const JoinQuantExport = lazy(() =>
   import("@/pages/JoinQuantExport").then((m) => ({ default: m.JoinQuantExport })),
