@@ -352,6 +352,11 @@ describe("JoinQuantExport page", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成复制包" }));
 
     expect(await screen.findByText("复制包摘要")).toBeInTheDocument();
+    expect(screen.getByText("复制前审阅")).toBeInTheDocument();
+    expect(screen.getByText("代码映射检查")).toBeInTheDocument();
+    expect(screen.getByText("基础语法检查")).toBeInTheDocument();
+    expect(screen.getByText("目标持仓来源")).toBeInTheDocument();
+    expect(screen.getByText(/Download Python Strategy/)).toBeInTheDocument();
     expect(screen.getByText("strategy.py")).toBeInTheDocument();
     expect(screen.getByText("3 个 / 19%")).toBeInTheDocument();
 
@@ -359,6 +364,7 @@ describe("JoinQuantExport page", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(copyPackage.clipboard_text));
     expect(screen.getByText(/已复制 strategy.py/)).toBeInTheDocument();
+    expect(screen.getByText(/最近复制时间：/)).toBeInTheDocument();
   });
 
   it("clears the generated package when export parameters change", async () => {
