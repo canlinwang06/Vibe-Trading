@@ -148,6 +148,31 @@ function downloadTextFile(filename: string, content: string, contentType: string
   URL.revokeObjectURL(url);
 }
 
+function packageArchiveFilename(copyPackage: JoinQuantCopyPackageResponse): string {
+  return `${copyPackage.manifest.strategy_id}_${copyPackage.manifest.signal_date}_copy_package.json`;
+}
+
+function packageArchiveContent(copyPackage: JoinQuantCopyPackageResponse): string {
+  return JSON.stringify({
+    generated_by: "Vibe-Trading",
+    package_type: "joinquant-local-copy-package",
+    manifest: copyPackage.manifest,
+    validation: copyPackage.validation,
+    files: copyPackage.files.map((file) => ({
+      filename: file.filename,
+      content_type: file.content_type,
+      content: file.content,
+      size: file.content.length,
+    })),
+    guardrails: {
+      local_download_only: true,
+      opens_joinquant: false,
+      submits_orders: false,
+      live_trading: false,
+    },
+  }, null, 2);
+}
+
 function ValidationSummary({ validation }: { validation: JoinQuantPreflightResponse["validation"] }) {
   const ready = validation.status === "ok";
   const messages = ready ? validation.warnings : validation.errors;
@@ -187,6 +212,76 @@ function ValidationSummary({ validation }: { validation: JoinQuantPreflightRespo
         </ul>
       ) : null}
     </div>
+  );
+}
+
+function CopyPackageArchive({ copyPackage }: { copyPackage: JoinQuantCopyPackageResponse }) {
+  const archiveFilename = packageArchiveFilename(copyPackage);
+  const archiveContent = packageArchiveContent(copyPackage);
+  const totalSize = copyPackage.files.reduce((sum, file) => sum + file.content.length, 0);
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Download className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">复制包清单</h2>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            将策略代码、信号文件、说明文档和校验清单打包为一个本地 JSON 文件，便于归档和转移。
+          </p>
+        </div>
+        <button
+          className="inline-flex w-fit items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          onClick={() => downloadTextFile(archiveFilename, archiveContent, "application/json")}
+          type="button"
+        >
+          <Download className="h-3.5 w-3.5" />
+          下载完整复制包
+        </button>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">文件数</dt>
+          <dd className="mt-1 font-medium">{copyPackage.files.length}</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">内容大小</dt>
+          <dd className="mt-1 font-medium">{totalSize} 字符</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">清单文件</dt>
+          <dd className="mt-1 font-medium">{archiveFilename}</dd>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <dt className="text-xs text-muted-foreground">边界</dt>
+          <dd className="mt-1 font-medium">本地下载 / 不提交</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted/30 text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">文件</th>
+              <th className="px-3 py-2 font-medium">类型</th>
+              <th className="px-3 py-2 font-medium">大小</th>
+            </tr>
+          </thead>
+          <tbody>
+            {copyPackage.files.map((file) => (
+              <tr key={file.filename} className="border-t">
+                <td className="px-3 py-2 font-medium text-foreground">{file.filename}</td>
+                <td className="px-3 py-2 text-muted-foreground">{file.content_type}</td>
+                <td className="px-3 py-2 text-muted-foreground">{file.content.length} 字符</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -1114,6 +1209,7 @@ export function JoinQuantExport() {
       </section>
 
       {copyPackage ? <PackageSummary copyPackage={copyPackage} /> : null}
+      {copyPackage ? <CopyPackageArchive copyPackage={copyPackage} /> : null}
       {copyPackage ? <SignalFilePreview copyPackage={copyPackage} /> : null}
 
       <section className="rounded-lg border bg-card p-5">

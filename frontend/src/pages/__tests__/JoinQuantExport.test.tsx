@@ -357,7 +357,10 @@ describe("JoinQuantExport page", () => {
     expect(screen.getByText("基础语法检查")).toBeInTheDocument();
     expect(screen.getByText("目标持仓来源")).toBeInTheDocument();
     expect(screen.getByText(/Download Python Strategy/)).toBeInTheDocument();
-    expect(screen.getByText("strategy.py")).toBeInTheDocument();
+    expect(screen.getAllByText("strategy.py").length).toBeGreaterThan(0);
+    expect(screen.getByText("复制包清单")).toBeInTheDocument();
+    expect(screen.getByText("下载完整复制包")).toBeInTheDocument();
+    expect(screen.getByText("cn_a_main_jq_test_2026-06-23_copy_package.json")).toBeInTheDocument();
     expect(screen.getByText("信号文件预览")).toBeInTheDocument();
     expect(screen.getByText("导出信号 JSON")).toBeInTheDocument();
     expect(screen.getByText("导出信号 CSV")).toBeInTheDocument();
@@ -395,6 +398,32 @@ describe("JoinQuantExport page", () => {
 
     expect(createObjectURL).toHaveBeenCalledTimes(2);
     expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+  it("downloads the complete local copy package manifest", async () => {
+    const createObjectURL = vi.fn().mockReturnValue("blob:package");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+    apiMock.joinQuantPreflight.mockResolvedValue(okPreflight);
+    apiMock.joinQuantExportCopyPackage.mockResolvedValue(copyPackage);
+
+    render(<JoinQuantExport />);
+    fireEvent.click(screen.getByRole("button", { name: "生成复制包" }));
+    expect(await screen.findByText("复制包清单")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载完整复制包" }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:package");
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("application/json");
   });
 
   it("clears the generated package when export parameters change", async () => {
