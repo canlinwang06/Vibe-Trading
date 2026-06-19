@@ -3314,6 +3314,9 @@ register_strategy_lab_routes(app, require_local_or_auth=require_local_or_auth)
 from src.api.portfolio_risk_routes import register_portfolio_risk_routes  # noqa: E402
 register_portfolio_risk_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.joinquant_routes import register_joinquant_routes  # noqa: E402
+register_joinquant_routes(app, require_local_or_auth=require_local_or_auth)
+
 
 # ============================================================================
 # Main Entry Point
