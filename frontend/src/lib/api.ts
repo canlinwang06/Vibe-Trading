@@ -143,6 +143,21 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  joinQuantPreflight: (body: JoinQuantExportRequest) =>
+    request<JoinQuantPreflightResponse>("/api/joinquant/export/preflight", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantExportStrategyCode: (body: JoinQuantExportRequest) =>
+    request<JoinQuantStrategyCodeResponse>("/api/joinquant/export/strategy-code", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantExportCopyPackage: (body: JoinQuantExportRequest) =>
+    request<JoinQuantCopyPackageResponse>("/api/joinquant/export/copy-package", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -276,6 +291,89 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+}
+
+export interface JoinQuantExportRequest {
+  portfolio_id: string;
+  signal_date?: string | null;
+  strategy_id?: string | null;
+  risk_notice?: string;
+  require_approved?: boolean;
+}
+
+export interface JoinQuantValidation {
+  status: "ok" | "blocked" | string;
+  checked_count: number;
+  error_count: number;
+  warning_count: number;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface JoinQuantPreflightResponse {
+  portfolio_id: string;
+  signal_date: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantStrategyCodeResponse {
+  status: string;
+  export_type: string;
+  portfolio_id: string;
+  signal_date: string;
+  strategy_id: string;
+  filename: string;
+  python_code: string;
+  risk_notice: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  manual_confirmation_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantPackageFile {
+  filename: string;
+  content_type: string;
+  content: string;
+}
+
+export interface JoinQuantPackageManifestFile {
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+export interface JoinQuantPackageManifest {
+  package_type: string;
+  strategy_id: string;
+  portfolio_id: string;
+  signal_date: string;
+  valid_for: string;
+  target_count: number;
+  total_exposure: number;
+  files: JoinQuantPackageManifestFile[];
+  manual_confirmation_required: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantCopyPackageResponse {
+  status: string;
+  export_type: string;
+  portfolio_id: string;
+  signal_date: string;
+  strategy_id: string;
+  manifest: JoinQuantPackageManifest;
+  files: JoinQuantPackageFile[];
+  clipboard_text: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  manual_confirmation_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
 }
 
 // --- Types matching backend API contracts ---
