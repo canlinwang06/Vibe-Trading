@@ -33,6 +33,12 @@ pytestmark = pytest.mark.unit
 AGENT_DIR = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def legacy_live_consent_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the live-consent state machine, not PR-01 product policy."""
+    monkeypatch.setenv("CN_A_ONLY", "0")
+
+
 @pytest.fixture
 def live_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the live root at a tmp dir so tests never touch the real store."""

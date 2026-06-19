@@ -141,6 +141,16 @@ class BacktestConfigSchema(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def enforce_market_policy(self) -> "BacktestConfigSchema":
+        """Apply workspace market policy after schema validation."""
+        from src.market_policy import validate_backtest_config
+
+        checked = validate_backtest_config(self.model_dump(mode="python"))
+        for key, value in checked.items():
+            setattr(self, key, value)
+        return self
+
 
 def _load_module_from_file(file_path: Path, module_name: str):
     """Load a Python module from a file path via importlib.
@@ -420,15 +430,15 @@ def main(run_dir: Path) -> None:
 
     raw_config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    # Validate config schema
+    # Validate config schema and workspace market policy.
     try:
-        BacktestConfigSchema(**raw_config)
+        validated_config = BacktestConfigSchema(**raw_config)
     except Exception as exc:
         errors = str(exc)
         print(json.dumps({"error": f"Invalid config: {errors}"}))
         sys.exit(1)
 
-    config = raw_config
+    config = validated_config.model_dump(mode="python")
     source = config.get("source", "tushare")
     codes = config.get("codes", [])
 
