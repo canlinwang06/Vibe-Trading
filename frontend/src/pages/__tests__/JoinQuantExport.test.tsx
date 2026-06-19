@@ -1,10 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { JoinQuantExport } from "../JoinQuantExport";
-import type { JoinQuantCopyPackageResponse, JoinQuantPreflightResponse } from "@/lib/api";
+import type {
+  JoinQuantCopyPackageResponse,
+  JoinQuantExecutionReport,
+  JoinQuantExecutionReportImportResponse,
+  JoinQuantExecutionReportListResponse,
+  JoinQuantExecutionReportSummary,
+  JoinQuantPreflightResponse,
+} from "@/lib/api";
 
 const apiMock = vi.hoisted(() => ({
   joinQuantPreflight: vi.fn(),
   joinQuantExportCopyPackage: vi.fn(),
+  joinQuantImportExecutionReports: vi.fn(),
+  joinQuantExecutionReportSummary: vi.fn(),
+  joinQuantListExecutionReports: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -89,6 +99,95 @@ const copyPackage: JoinQuantCopyPackageResponse = {
   live_trading: false,
 };
 
+const executionReports: JoinQuantExecutionReport[] = [
+  {
+    report_id: "cn_a_main:2026-06-23:2026-06-24:600519.SH",
+    portfolio_id: "cn_a_main",
+    signal_date: "2026-06-23",
+    trade_date: "2026-06-24",
+    ticker: "600519.SH",
+    planned_weight: 0.08,
+    executed_weight: 0.08,
+    order_status: "filled",
+    fill_price: 1688.5,
+    fill_amount: 8000,
+  },
+  {
+    report_id: "cn_a_main:2026-06-23:2026-06-24:300750.SZ",
+    portfolio_id: "cn_a_main",
+    signal_date: "2026-06-23",
+    trade_date: "2026-06-24",
+    ticker: "300750.SZ",
+    planned_weight: 0.07,
+    executed_weight: 0,
+    order_status: "rejected",
+    error_message: "涨停无法买入",
+  },
+];
+
+const executionSummary: JoinQuantExecutionReportSummary = {
+  status: "needs_review",
+  portfolio_id: "cn_a_main",
+  signal_date: "2026-06-23",
+  trade_date: "2026-06-24",
+  report_count: 2,
+  signal_count: 2,
+  matched_signal_count: 2,
+  failed_count: 1,
+  unmatched_report_count: 0,
+  missing_report_count: 0,
+  total_planned_weight: 0.15,
+  total_executed_weight: 0.08,
+  max_abs_weight_diff: 0.07,
+  total_abs_weight_diff: 0.07,
+  tolerance: 0.01,
+  status_counts: { filled: 1, rejected: 1 },
+  unmatched_reports: [],
+  missing_reports: [],
+  deviations: [
+    {
+      ticker: "600519.SH",
+      planned_weight: 0.08,
+      executed_weight: 0.08,
+      abs_weight_diff: 0,
+      order_status: "filled",
+      matched_signal: true,
+      needs_review: false,
+    },
+    {
+      ticker: "300750.SZ",
+      planned_weight: 0.07,
+      executed_weight: 0,
+      abs_weight_diff: 0.07,
+      order_status: "rejected",
+      matched_signal: true,
+      needs_review: true,
+    },
+  ],
+  action_required: true,
+  research_only: true,
+  live_trading: false,
+};
+
+const importResponse: JoinQuantExecutionReportImportResponse = {
+  status: "needs_review",
+  imported_count: 2,
+  portfolio_id: "cn_a_main",
+  signal_date: "2026-06-23",
+  trade_date: "2026-06-24",
+  replace: false,
+  reports: executionReports,
+  summary: executionSummary,
+  research_only: true,
+  live_trading: false,
+};
+
+const listResponse: JoinQuantExecutionReportListResponse = {
+  status: "ok",
+  count: executionReports.length,
+  reports: executionReports,
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -103,6 +202,9 @@ describe("JoinQuantExport page", () => {
   beforeEach(() => {
     apiMock.joinQuantPreflight.mockReset();
     apiMock.joinQuantExportCopyPackage.mockReset();
+    apiMock.joinQuantImportExecutionReports.mockReset();
+    apiMock.joinQuantExecutionReportSummary.mockReset();
+    apiMock.joinQuantListExecutionReports.mockReset();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -116,6 +218,8 @@ describe("JoinQuantExport page", () => {
     expect(screen.getByText("聚宽导出")).toBeInTheDocument();
     expect(screen.getByText("导出参数")).toBeInTheDocument();
     expect(screen.getByText("复制状态")).toBeInTheDocument();
+    expect(screen.getByText("执行报告导入")).toBeInTheDocument();
+    expect(screen.getByLabelText("报告 JSON")).toBeInTheDocument();
     expect(screen.getByText("仅导出 approved 信号")).toBeInTheDocument();
     expect(screen.getByText("不登录聚宽，不提交订单")).toBeInTheDocument();
   });
@@ -234,5 +338,70 @@ describe("JoinQuantExport page", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载 strategy.py" }));
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:strategy");
+  });
+
+  it("imports pasted JoinQuant execution reports and shows reconciliation", async () => {
+    apiMock.joinQuantImportExecutionReports.mockResolvedValue(importResponse);
+
+    render(<JoinQuantExport />);
+    fireEvent.change(screen.getByLabelText("报告信号日期"), { target: { value: "2026-06-23" } });
+    fireEvent.change(screen.getByLabelText("报告交易日"), { target: { value: "2026-06-24" } });
+    fireEvent.click(screen.getByRole("button", { name: "导入报告" }));
+
+    await waitFor(() => expect(apiMock.joinQuantImportExecutionReports).toHaveBeenCalledTimes(1));
+    expect(apiMock.joinQuantImportExecutionReports).toHaveBeenCalledWith(
+      expect.objectContaining({
+        portfolio_id: "cn_a_main",
+        signal_date: "2026-06-23",
+        trade_date: "2026-06-24",
+        replace: false,
+        reports: expect.arrayContaining([
+          expect.objectContaining({ ticker: "600519.XSHG", order_status: "filled" }),
+        ]),
+      }),
+    );
+    expect(await screen.findByText("已导入 2 条聚宽报告。")).toBeInTheDocument();
+    expect(screen.getByText("执行复盘摘要")).toBeInTheDocument();
+    expect(screen.getByText("需要复盘")).toBeInTheDocument();
+    expect(screen.getByText("失败订单")).toBeInTheDocument();
+    expect(screen.getAllByText("300750.SZ").length).toBeGreaterThan(0);
+    expect(screen.getByText("最近导入报告")).toBeInTheDocument();
+  });
+
+  it("blocks invalid execution report JSON before calling the API", async () => {
+    render(<JoinQuantExport />);
+    fireEvent.change(screen.getByLabelText("报告 JSON"), { target: { value: "{not json" } });
+    fireEvent.click(screen.getByRole("button", { name: "导入报告" }));
+
+    expect(await screen.findByText("报告 JSON 格式无效，请粘贴 JSON 数组或包含 reports 的对象。")).toBeInTheDocument();
+    expect(apiMock.joinQuantImportExecutionReports).not.toHaveBeenCalled();
+  });
+
+  it("refreshes execution summary and report list", async () => {
+    apiMock.joinQuantExecutionReportSummary.mockResolvedValue(executionSummary);
+    apiMock.joinQuantListExecutionReports.mockResolvedValue(listResponse);
+
+    render(<JoinQuantExport />);
+    fireEvent.change(screen.getByLabelText("报告信号日期"), { target: { value: "2026-06-23" } });
+    fireEvent.change(screen.getByLabelText("报告交易日"), { target: { value: "2026-06-24" } });
+    fireEvent.change(screen.getByLabelText("偏差容忍度"), { target: { value: "0.02" } });
+    fireEvent.click(screen.getByRole("button", { name: "查询复盘" }));
+
+    await waitFor(() => expect(apiMock.joinQuantExecutionReportSummary).toHaveBeenCalledTimes(1));
+    expect(apiMock.joinQuantExecutionReportSummary).toHaveBeenCalledWith({
+      portfolio_id: "cn_a_main",
+      signal_date: "2026-06-23",
+      trade_date: "2026-06-24",
+      tolerance: 0.02,
+    });
+    expect(apiMock.joinQuantListExecutionReports).toHaveBeenCalledWith({
+      portfolio_id: "cn_a_main",
+      signal_date: "2026-06-23",
+      trade_date: "2026-06-24",
+      limit: 200,
+    });
+    expect(await screen.findByText("已加载 2 条报告的复盘摘要。")).toBeInTheDocument();
+    expect(screen.getByText("执行复盘摘要")).toBeInTheDocument();
+    expect(screen.getByText("最近导入报告")).toBeInTheDocument();
   });
 });

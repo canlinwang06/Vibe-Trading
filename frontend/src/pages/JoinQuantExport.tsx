@@ -6,26 +6,55 @@ import {
   ClipboardCopy,
   Download,
   FileCode2,
+  FileSearch,
+  ListChecks,
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Upload,
 } from "lucide-react";
 import {
   ApiError,
   api,
   type JoinQuantCopyPackageResponse,
+  type JoinQuantExecutionReport,
+  type JoinQuantExecutionReportSummary,
   type JoinQuantExportRequest,
   type JoinQuantPreflightResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_RISK_NOTICE = "研究/模拟用途；复制到聚宽后必须人工确认风险，不能直接用于实盘。";
+const DEFAULT_REPORT_JSON = JSON.stringify(
+  [
+    {
+      ticker: "600519.XSHG",
+      order_status: "filled",
+      executed_weight: 0.08,
+      fill_price: 1688.5,
+      fill_amount: 8000,
+    },
+    {
+      ticker: "300750.XSHE",
+      order_status: "filled",
+      executed_weight: 0.07,
+    },
+  ],
+  null,
+  2,
+);
 
 type LoadingAction = "preflight" | "package" | "copy" | null;
+type ReportAction = "import" | "summary" | null;
 
 type CopyState =
   | { status: "idle"; message: string }
   | { status: "success"; message: string; copiedAt: string }
+  | { status: "failed"; message: string };
+
+type ReportState =
+  | { status: "idle"; message: string }
+  | { status: "success"; message: string }
   | { status: "failed"; message: string };
 
 function todayLabel(): string {
@@ -40,7 +69,30 @@ function todayLabel(): string {
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError || error instanceof Error) return error.message;
-  return "聚宽复制包生成失败，请检查本地服务状态。";
+  return "聚宽操作失败，请检查本地服务状态。";
+}
+
+function formatPercent(value: number | null | undefined): string {
+  const numeric = Number(value || 0);
+  return `${Math.round(numeric * 10000) / 100}%`;
+}
+
+function parseReportRows(value: string): Record<string, unknown>[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("报告 JSON 格式无效，请粘贴 JSON 数组或包含 reports 的对象。");
+  }
+  if (Array.isArray(parsed)) return parsed as Record<string, unknown>[];
+  if (
+    parsed
+    && typeof parsed === "object"
+    && Array.isArray((parsed as { reports?: unknown }).reports)
+  ) {
+    return (parsed as { reports: Record<string, unknown>[] }).reports;
+  }
+  throw new Error("报告 JSON 必须是数组，或包含 reports 数组的对象。");
 }
 
 function downloadTextFile(filename: string, content: string, contentType: string) {
@@ -159,6 +211,134 @@ function PackageSummary({ copyPackage }: { copyPackage: JoinQuantCopyPackageResp
   );
 }
 
+function ExecutionSummaryPanel({ summary }: { summary: JoinQuantExecutionReportSummary }) {
+  const needsReview = summary.status !== "ok" || summary.action_required;
+  const metrics = [
+    { label: "报告数", value: String(summary.report_count) },
+    { label: "匹配信号", value: `${summary.matched_signal_count}/${summary.signal_count}` },
+    { label: "失败订单", value: String(summary.failed_count) },
+    { label: "最大偏差", value: formatPercent(summary.max_abs_weight_diff) },
+  ];
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-semibold">执行复盘摘要</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {summary.portfolio_id} / {summary.signal_date} / {summary.trade_date}
+          </p>
+        </div>
+        <span className={cn(
+          "inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
+          needsReview
+            ? "border-warning/30 bg-warning/5 text-warning"
+            : "border-success/30 bg-success/5 text-success",
+        )}>
+          {needsReview ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {needsReview ? "需要复盘" : "执行匹配"}
+        </span>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((item) => (
+          <div key={item.label} className="rounded-lg border bg-muted/20 p-3">
+            <dt className="text-xs text-muted-foreground">{item.label}</dt>
+            <dd className="mt-1 font-medium">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">状态分布</p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            {Object.entries(summary.status_counts).length > 0
+              ? Object.entries(summary.status_counts).map(([key, value]) => `${key}: ${value}`).join(" / ")
+              : "暂无状态统计"}
+          </p>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <p className="font-medium text-foreground">异常项</p>
+          <p className="mt-2 leading-5 text-muted-foreground">
+            未匹配 {summary.unmatched_report_count} 个，缺失 {summary.missing_report_count} 个，总偏差 {formatPercent(summary.total_abs_weight_diff)}
+          </p>
+        </div>
+      </div>
+
+      {summary.deviations.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-lg border">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">股票</th>
+                <th className="px-3 py-2 font-medium">计划</th>
+                <th className="px-3 py-2 font-medium">执行</th>
+                <th className="px-3 py-2 font-medium">偏差</th>
+                <th className="px-3 py-2 font-medium">状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.deviations.map((row) => (
+                <tr key={row.ticker} className={cn("border-t", row.needs_review ? "bg-warning/5" : "")}>
+                  <td className="px-3 py-2 font-medium text-foreground">{row.ticker}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.planned_weight)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.executed_weight)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.abs_weight_diff)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{row.order_status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+          暂无偏差明细。
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ExecutionReportTable({ reports }: { reports: JoinQuantExecutionReport[] }) {
+  if (reports.length === 0) return null;
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <ListChecks className="h-4 w-4 text-primary" />
+        <p className="text-sm font-semibold">最近导入报告</p>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted/30 text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">股票</th>
+              <th className="px-3 py-2 font-medium">信号日</th>
+              <th className="px-3 py-2 font-medium">交易日</th>
+              <th className="px-3 py-2 font-medium">计划仓位</th>
+              <th className="px-3 py-2 font-medium">执行仓位</th>
+              <th className="px-3 py-2 font-medium">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((row) => (
+              <tr key={row.report_id} className="border-t">
+                <td className="px-3 py-2 font-medium text-foreground">{row.ticker}</td>
+                <td className="px-3 py-2 text-muted-foreground">{row.signal_date}</td>
+                <td className="px-3 py-2 text-muted-foreground">{row.trade_date}</td>
+                <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.planned_weight)}</td>
+                <td className="px-3 py-2 text-muted-foreground">{formatPercent(row.executed_weight)}</td>
+                <td className="px-3 py-2 text-muted-foreground">{row.order_status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function JoinQuantExport() {
   const [portfolioId, setPortfolioId] = useState("cn_a_main");
   const [signalDate, setSignalDate] = useState("");
@@ -173,7 +353,22 @@ export function JoinQuantExport() {
     status: "idle",
     message: "尚未复制",
   });
+  const [reportPortfolioId, setReportPortfolioId] = useState("cn_a_main");
+  const [reportSignalDate, setReportSignalDate] = useState("");
+  const [reportTradeDate, setReportTradeDate] = useState("");
+  const [reportTolerance, setReportTolerance] = useState("0.01");
+  const [reportReplace, setReportReplace] = useState(false);
+  const [reportJson, setReportJson] = useState(DEFAULT_REPORT_JSON);
+  const [reportAction, setReportAction] = useState<ReportAction>(null);
+  const [reportState, setReportState] = useState<ReportState>({
+    status: "idle",
+    message: "尚未导入报告",
+  });
+  const [reportError, setReportError] = useState("");
+  const [reportSummary, setReportSummary] = useState<JoinQuantExecutionReportSummary | null>(null);
+  const [reportRows, setReportRows] = useState<JoinQuantExecutionReport[]>([]);
   const operationSeq = useRef(0);
+  const reportSeq = useRef(0);
 
   const payload = useMemo<JoinQuantExportRequest>(() => ({
     portfolio_id: portfolioId.trim() || "cn_a_main",
@@ -282,8 +477,82 @@ export function JoinQuantExport() {
     downloadTextFile(strategyFile.filename, strategyFile.content, strategyFile.content_type);
   }
 
+  function reportQuery() {
+    return {
+      portfolio_id: reportPortfolioId.trim() || "cn_a_main",
+      signal_date: reportSignalDate.trim() || null,
+      trade_date: reportTradeDate.trim() || null,
+    };
+  }
+
+  function parsedTolerance(): number {
+    const value = Number(reportTolerance);
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error("偏差容忍度必须是 0 到 1 之间的小数。");
+    }
+    return value;
+  }
+
+  async function importReports() {
+    const operationId = reportSeq.current + 1;
+    reportSeq.current = operationId;
+    setReportAction("import");
+    setReportError("");
+    try {
+      const rows = parseReportRows(reportJson);
+      const query = reportQuery();
+      const result = await api.joinQuantImportExecutionReports({
+        ...query,
+        replace: reportReplace,
+        reports: rows,
+      });
+      if (operationId !== reportSeq.current) return;
+      setReportRows(result.reports);
+      setReportSummary(result.summary);
+      setReportState({
+        status: "success",
+        message: `已导入 ${result.imported_count} 条聚宽报告。`,
+      });
+    } catch (err) {
+      if (operationId !== reportSeq.current) return;
+      setReportState({ status: "failed", message: "导入失败" });
+      setReportError(errorMessage(err));
+    } finally {
+      if (operationId === reportSeq.current) setReportAction(null);
+    }
+  }
+
+  async function refreshExecutionSummary() {
+    const operationId = reportSeq.current + 1;
+    reportSeq.current = operationId;
+    setReportAction("summary");
+    setReportError("");
+    try {
+      const query = reportQuery();
+      const tolerance = parsedTolerance();
+      const [summary, list] = await Promise.all([
+        api.joinQuantExecutionReportSummary({ ...query, tolerance }),
+        api.joinQuantListExecutionReports({ ...query, limit: 200 }),
+      ]);
+      if (operationId !== reportSeq.current) return;
+      setReportSummary(summary);
+      setReportRows(list.reports);
+      setReportState({
+        status: "success",
+        message: `已加载 ${summary.report_count} 条报告的复盘摘要。`,
+      });
+    } catch (err) {
+      if (operationId !== reportSeq.current) return;
+      setReportState({ status: "failed", message: "查询失败" });
+      setReportError(errorMessage(err));
+    } finally {
+      if (operationId === reportSeq.current) setReportAction(null);
+    }
+  }
+
   const preflightReady = preflight?.copy_ready;
   const isBusy = loadingAction !== null;
+  const reportBusy = reportAction !== null;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -476,6 +745,133 @@ export function JoinQuantExport() {
       </section>
 
       {copyPackage ? <PackageSummary copyPackage={copyPackage} /> : null}
+
+      <section className="rounded-lg border bg-card p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Upload className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">执行报告导入</h2>
+            </div>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
+              将聚宽回测或模拟盘导出的执行结果粘贴为 JSON，系统会写入本地复盘表并对比目标仓位、失败订单和偏差。
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-md border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            只导入本地报告
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
+          <div className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">报告组合 ID</span>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                  value={reportPortfolioId}
+                  onChange={(event) => setReportPortfolioId(event.target.value)}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">偏差容忍度</span>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                  inputMode="decimal"
+                  value={reportTolerance}
+                  onChange={(event) => setReportTolerance(event.target.value)}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">报告信号日期</span>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                  placeholder="留空使用报告内日期"
+                  type="date"
+                  value={reportSignalDate}
+                  onChange={(event) => setReportSignalDate(event.target.value)}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">报告交易日</span>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                  placeholder="留空使用报告内日期"
+                  type="date"
+                  value={reportTradeDate}
+                  onChange={(event) => setReportTradeDate(event.target.value)}
+                />
+              </label>
+            </div>
+
+            <label className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+              <input
+                checked={reportReplace}
+                className="h-4 w-4 accent-primary"
+                type="checkbox"
+                onChange={(event) => setReportReplace(event.target.checked)}
+              />
+              <span>覆盖同一批次已有报告</span>
+            </label>
+
+            <div className={cn(
+              "rounded-lg border p-3 text-xs leading-5",
+              reportState.status === "failed"
+                ? "border-destructive/30 bg-destructive/5 text-destructive"
+                : "bg-muted/20 text-muted-foreground",
+            )}>
+              <p className="font-medium text-foreground">{reportState.message}</p>
+              {reportError ? <p className="mt-1">{reportError}</p> : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={reportBusy}
+                onClick={importReports}
+                type="button"
+              >
+                {reportAction === "import" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                导入报告
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={reportBusy}
+                onClick={refreshExecutionSummary}
+                type="button"
+              >
+                {reportAction === "summary" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileSearch className="h-4 w-4" />
+                )}
+                查询复盘
+              </button>
+            </div>
+          </div>
+
+          <label className="grid gap-1.5 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">报告 JSON</span>
+            <textarea
+              className="min-h-80 rounded-md border bg-background px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors focus:border-primary"
+              value={reportJson}
+              onChange={(event) => setReportJson(event.target.value)}
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      </section>
+
+      {reportSummary ? <ExecutionSummaryPanel summary={reportSummary} /> : null}
+      <ExecutionReportTable reports={reportRows} />
     </div>
   );
 }
