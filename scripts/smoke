@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+BACKEND_PORT="${VIBE_SMOKE_BACKEND_PORT:-8899}"
+BACKEND_HOST="${VIBE_SMOKE_BACKEND_HOST:-127.0.0.1}"
+BACKEND_URL="http://$BACKEND_HOST:$BACKEND_PORT"
+SERVER_PID=""
+SERVER_LOG=""
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "smoke failed: %s\n" "$1" >&2
+  exit 1
+}
+
+cleanup() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+require_file() {
+  [[ -e "$1" ]] || fail "missing required path: $1"
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
+}
+
+url_ok() {
+  local url="$1"
+  curl -fsS --max-time 3 "$url" >/dev/null 2>&1
+}
+
+wait_for_url() {
+  local url="$1"
+  local attempts="${2:-45}"
+
+  for ((i = 1; i <= attempts; i++)); do
+    if url_ok "$url"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+step "Check local toolchain"
+require_file "$PYTHON_BIN"
+require_file "$ROOT/frontend/package.json"
+require_file "$ROOT/agent/.env"
+require_cmd npm
+require_cmd curl
+
+step "Check provider guardrails"
+"$PYTHON_BIN" - "$ROOT/agent/.env" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+env_path = Path(sys.argv[1])
+values: dict[str, str] = {}
+for raw in env_path.read_text(encoding="utf-8").splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    values[key.strip()] = value.strip().strip('"').strip("'")
+
+provider = values.get("LANGCHAIN_PROVIDER", "")
+if provider != "openai-codex":
+    raise SystemExit("LANGCHAIN_PROVIDER must be openai-codex for PR smoke tests")
+
+if values.get("OPENAI_API_KEY"):
+    raise SystemExit("OPENAI_API_KEY must not be configured for this project")
+
+base_url = values.get("OPENAI_CODEX_BASE_URL", "")
+if base_url and base_url != "https://chatgpt.com/backend-api/codex/responses":
+    raise SystemExit("OPENAI_CODEX_BASE_URL must use the ChatGPT Codex endpoint")
+
+print("provider guardrails ok")
+PY
+
+step "Compile backend"
+"$PYTHON_BIN" -m compileall -q "$ROOT/agent"
+
+step "Build frontend"
+npm --prefix "$ROOT/frontend" run build
+
+step "List MCP tools"
+"$PYTHON_BIN" - "$ROOT" <<'PY'
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from pathlib import Path
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+
+async def main() -> None:
+    root = Path(sys.argv[1])
+    command = root / ".venv" / "bin" / "vibe-trading-mcp"
+    if not command.exists():
+        raise SystemExit(f"missing MCP entrypoint: {command}")
+
+    env = os.environ.copy()
+    env.setdefault("LANGCHAIN_PROVIDER", "openai-codex")
+    env.setdefault("OPENAI_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex/responses")
+
+    params = StdioServerParameters(command=str(command), cwd=str(root), env=env)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.list_tools()
+            names = {tool.name for tool in result.tools}
+
+    required = {"list_skills", "backtest"}
+    missing = sorted(required - names)
+    if missing:
+        raise SystemExit(f"MCP tools missing: {missing}")
+    print(f"mcp tools ok: {len(names)} tools")
+
+
+asyncio.run(main())
+PY
+
+step "Verify web UI"
+if ! url_ok "$BACKEND_URL/health"; then
+  SERVER_LOG="$(mktemp -t vibe-trading-smoke.XXXXXX.log)"
+  (
+    cd "$ROOT"
+    PYTHONPATH="$ROOT/agent" "$PYTHON_BIN" -c 'import cli, sys; raise SystemExit(cli.main(sys.argv[1:]))' serve \
+      --host "$BACKEND_HOST" \
+      --port "$BACKEND_PORT"
+  ) >"$SERVER_LOG" 2>&1 &
+  SERVER_PID="$!"
+
+  if ! wait_for_url "$BACKEND_URL/health" 60; then
+    tail -n 120 "$SERVER_LOG" >&2 || true
+    fail "web UI did not become healthy at $BACKEND_URL"
+  fi
+fi
+
+"$PYTHON_BIN" - "$BACKEND_URL" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+import urllib.request
+
+base_url = sys.argv[1].rstrip("/")
+
+with urllib.request.urlopen(f"{base_url}/settings/llm", timeout=5) as response:
+    payload = json.loads(response.read().decode("utf-8"))
+
+provider = payload.get("provider")
+model = payload.get("model_name") or payload.get("model")
+if provider != "openai-codex":
+    raise SystemExit(f"unexpected provider: {provider}")
+if not model:
+    raise SystemExit("missing model name in LLM settings")
+
+with urllib.request.urlopen(base_url, timeout=5) as response:
+    body = response.read(4096).decode("utf-8", errors="ignore")
+if "Vibe-Trading" not in body:
+    raise SystemExit("web UI root did not return Vibe-Trading shell")
+
+print("web ui ok")
+PY
+
+printf "\nPR smoke test passed.\n"
