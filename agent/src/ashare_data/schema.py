@@ -274,6 +274,26 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "sector_scores",
+        """
+        CREATE TABLE IF NOT EXISTS sector_scores (
+          trade_date DATE,
+          sector_id VARCHAR,
+          sector_name VARCHAR,
+          event_heat DOUBLE,
+          market_confirm DOUBLE,
+          breadth_score DOUBLE,
+          flow_score DOUBLE,
+          persistence_score DOUBLE,
+          crowding_risk DOUBLE,
+          sector_heat_score DOUBLE,
+          cycle_stage VARCHAR,
+          created_at TIMESTAMP,
+          PRIMARY KEY (trade_date, sector_id)
+        )
+        """,
+    ),
+    TableSpec(
         "candidate_pool",
         """
         CREATE TABLE IF NOT EXISTS candidate_pool (
