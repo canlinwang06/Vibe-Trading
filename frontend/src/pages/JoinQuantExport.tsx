@@ -353,6 +353,62 @@ function CopyReviewPanel({
   );
 }
 
+function SignalFilePreview({ copyPackage }: { copyPackage: JoinQuantCopyPackageResponse }) {
+  const signalFiles = copyPackage.files.filter((file) =>
+    file.filename === "signals.json" || file.filename === "signals.csv",
+  );
+
+  if (!signalFiles.length) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-lg border bg-card p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileCode2 className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">信号文件预览</h2>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            下载 JoinQuant 兼容的 signals JSON/CSV，用于模拟策略读取，不直接连接聚宽账户。
+          </p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-md border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+          <ShieldCheck className="h-3.5 w-3.5 text-success" />
+          本地文件
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        {signalFiles.map((file) => (
+          <div key={file.filename} className="rounded-lg border bg-background p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">{file.filename === "signals.json" ? "导出信号 JSON" : "导出信号 CSV"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {file.filename} / {file.content_type} / {file.content.length} 字符
+                </p>
+              </div>
+              <button
+                className="inline-flex w-fit items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
+                onClick={() => downloadTextFile(file.filename, file.content, file.content_type)}
+                type="button"
+              >
+                <Download className="h-3.5 w-3.5" />
+                下载 {file.filename}
+              </button>
+            </div>
+            <pre className="mt-4 max-h-56 overflow-auto rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+              {file.content}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ExecutionSummaryPanel({ summary }: { summary: JoinQuantExecutionReportSummary }) {
   const needsReview = summary.status !== "ok" || summary.action_required;
   const metrics = [
@@ -1058,6 +1114,7 @@ export function JoinQuantExport() {
       </section>
 
       {copyPackage ? <PackageSummary copyPackage={copyPackage} /> : null}
+      {copyPackage ? <SignalFilePreview copyPackage={copyPackage} /> : null}
 
       <section className="rounded-lg border bg-card p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

@@ -358,6 +358,11 @@ describe("JoinQuantExport page", () => {
     expect(screen.getByText("目标持仓来源")).toBeInTheDocument();
     expect(screen.getByText(/Download Python Strategy/)).toBeInTheDocument();
     expect(screen.getByText("strategy.py")).toBeInTheDocument();
+    expect(screen.getByText("信号文件预览")).toBeInTheDocument();
+    expect(screen.getByText("导出信号 JSON")).toBeInTheDocument();
+    expect(screen.getByText("导出信号 CSV")).toBeInTheDocument();
+    expect(screen.getByText("signals.json / application/json / 2 字符")).toBeInTheDocument();
+    expect(screen.getByText("signals.csv / text/csv / 21 字符")).toBeInTheDocument();
     expect(screen.getByText("3 个 / 19%")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "复制策略代码" }));
@@ -365,6 +370,31 @@ describe("JoinQuantExport page", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(copyPackage.clipboard_text));
     expect(screen.getByText(/已复制 strategy.py/)).toBeInTheDocument();
     expect(screen.getByText(/最近复制时间：/)).toBeInTheDocument();
+  });
+
+  it("downloads generated signal JSON and CSV files", async () => {
+    const createObjectURL = vi.fn().mockReturnValue("blob:signals");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+    apiMock.joinQuantPreflight.mockResolvedValue(okPreflight);
+    apiMock.joinQuantExportCopyPackage.mockResolvedValue(copyPackage);
+
+    render(<JoinQuantExport />);
+    fireEvent.click(screen.getByRole("button", { name: "生成复制包" }));
+    expect(await screen.findByText("信号文件预览")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下载 signals.json" }));
+    fireEvent.click(screen.getByRole("button", { name: "下载 signals.csv" }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2);
   });
 
   it("clears the generated package when export parameters change", async () => {
