@@ -13,6 +13,7 @@ describe("A-share navigation", () => {
       "/",
       "/event-radar",
       "/sector-radar",
+      "/event-reactions",
       "/candidate-pool",
       "/strategy-lab",
       "/backtest-results",

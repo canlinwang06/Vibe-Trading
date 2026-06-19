@@ -37,6 +37,7 @@ export function Layout() {
     "/": Gauge,
     "/event-radar": Radar,
     "/sector-radar": Layers,
+    "/event-reactions": BarChart3,
     "/candidate-pool": Target,
     "/strategy-lab": FlaskConical,
     "/backtest-results": BarChart3,

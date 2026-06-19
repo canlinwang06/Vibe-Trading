@@ -28,6 +28,9 @@ const EventRadar = lazy(() =>
 const SectorRadar = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.SectorRadar })),
 );
+const EventReactions = lazy(() =>
+  import("@/pages/EventReactions").then((m) => ({ default: m.EventReactions })),
+);
 const CandidatePool = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.CandidatePool })),
 );
@@ -76,6 +79,7 @@ export const router = createBrowserRouter([
       { path: "/", element: wrap(Home) },
       { path: "/event-radar", element: wrap(EventRadar) },
       { path: "/sector-radar", element: wrap(SectorRadar) },
+      { path: "/event-reactions", element: wrap(EventReactions) },
       { path: "/candidate-pool", element: wrap(CandidatePool) },
       { path: "/strategy-lab", element: wrap(StrategyLab) },
       { path: "/backtest-results", element: wrap(BacktestResults) },
