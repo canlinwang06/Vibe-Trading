@@ -46,6 +46,9 @@ const TradePlan = lazy(() =>
 const JoinQuantExport = lazy(() =>
   import("@/pages/JoinQuantExport").then((m) => ({ default: m.JoinQuantExport })),
 );
+const DailyWorkflow = lazy(() =>
+  import("@/pages/DailyWorkflow").then((m) => ({ default: m.DailyWorkflow })),
+);
 const DataSources = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.DataSources })),
 );
@@ -79,6 +82,7 @@ export const router = createBrowserRouter([
       { path: "/risk-portfolio", element: wrap(RiskPortfolio) },
       { path: "/trade-plan", element: wrap(TradePlan) },
       { path: "/joinquant-export", element: wrap(JoinQuantExport) },
+      { path: "/daily-workflow", element: wrap(DailyWorkflow) },
       { path: "/data-sources", element: wrap(DataSources) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },

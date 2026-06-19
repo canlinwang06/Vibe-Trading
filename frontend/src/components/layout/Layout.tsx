@@ -13,6 +13,7 @@ import {
   Gauge,
   Languages,
   Layers,
+  ListChecks,
   Moon,
   Radar,
   Settings,
@@ -42,6 +43,7 @@ export function Layout() {
     "/risk-portfolio": ShieldCheck,
     "/trade-plan": ClipboardList,
     "/joinquant-export": FileText,
+    "/daily-workflow": ListChecks,
     "/data-sources": Database,
     "/settings": Settings,
   };

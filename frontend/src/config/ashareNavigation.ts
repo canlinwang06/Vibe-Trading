@@ -8,6 +8,7 @@ export const ASHARE_NAV_ITEMS = [
   { to: "/risk-portfolio", labelKey: "layout.riskPortfolio" },
   { to: "/trade-plan", labelKey: "layout.tradePlan" },
   { to: "/joinquant-export", labelKey: "layout.joinquantExport" },
+  { to: "/daily-workflow", labelKey: "layout.dailyWorkflow" },
   { to: "/data-sources", labelKey: "layout.dataSources" },
   { to: "/settings", labelKey: "layout.systemSettings" },
 ] as const;
@@ -22,6 +23,7 @@ export const ASHARE_NAV_LABELS_ZH = [
   "风控组合",
   "交易计划",
   "聚宽导出",
+  "每日工作流",
   "数据源设置",
   "系统设置",
 ] as const;

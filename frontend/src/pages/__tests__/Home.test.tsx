@@ -15,6 +15,7 @@ describe("A-share dashboard home", () => {
     expect(screen.getByText("板块雷达")).toBeInTheDocument();
     expect(screen.getByText("候选股票池")).toBeInTheDocument();
     expect(screen.getByText("聚宽导出")).toBeInTheDocument();
+    expect(screen.getByText("每日工作流")).toBeInTheDocument();
   });
 
   it("does not render legacy multi-market examples", () => {

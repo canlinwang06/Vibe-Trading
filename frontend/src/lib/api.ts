@@ -192,6 +192,11 @@ export const api = {
     if (params.max_signal_delay_days !== undefined) q.set("max_signal_delay_days", String(params.max_signal_delay_days));
     return request<JoinQuantSimulationReadinessReport>(`/api/joinquant/simulation-readiness?${q.toString()}`);
   },
+  dailyWorkflowRun: (body: DailyWorkflowRunRequest) =>
+    request<DailyWorkflowRunResponse>("/api/daily-workflow/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -582,6 +587,79 @@ export interface JoinQuantSimulationReadinessReport {
   checks: JoinQuantReadinessCheck[];
   findings: string[];
   daily_summaries: JoinQuantReadinessDailySummary[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type DailyWorkflowStepName =
+  | "collect_documents"
+  | "extract_events"
+  | "map_events"
+  | "score_sectors"
+  | "build_candidates"
+  | "seed_strategy_specs"
+  | "run_backtests"
+  | "rank_backtests"
+  | "allocate_portfolio"
+  | "generate_draft_signals";
+
+export interface DailyWorkflowDocumentPayload {
+  source_id: string;
+  title: string;
+  content: string;
+  publish_time: string;
+  summary?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  language?: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface DailyWorkflowRunRequest {
+  workflow_date?: string | null;
+  portfolio_id: string;
+  steps?: DailyWorkflowStepName[] | null;
+  documents?: DailyWorkflowDocumentPayload[];
+  dry_run?: boolean;
+  continue_on_error?: boolean;
+  event_limit?: number;
+  min_event_relevance?: number;
+  map_limit?: number;
+  min_mapping_relevance?: number;
+  sector_limit?: number;
+  candidate_limit?: number;
+  min_sector_score?: number;
+  seed_strategy_specs?: boolean;
+  backtest_start_date?: string | null;
+  backtest_end_date?: string | null;
+  backtest_limit?: number;
+  ranking_limit?: number;
+  top_n?: number;
+  market_regime?: string;
+  current_drawdown?: number;
+  signal_confidence?: number;
+  replace_signals?: boolean;
+}
+
+export interface DailyWorkflowStepResult {
+  name: DailyWorkflowStepName | string;
+  status: "ok" | "skipped" | "blocked" | "planned" | string;
+  message: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface DailyWorkflowRunResponse {
+  status: "ok" | "blocked" | "dry_run" | string;
+  workflow_date: string;
+  portfolio_id: string;
+  requested_steps: DailyWorkflowStepName[];
+  completed_step_count: number;
+  skipped_step_count: number;
+  blocked_step?: string | null;
+  steps: DailyWorkflowStepResult[];
   research_only: boolean;
   live_trading: boolean;
 }
