@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,11 @@ def _round_weight(value: float) -> float:
     if math.isnan(value) or math.isinf(value):
         return 0.0
     return round(max(0.0, value), 6)
+
+
+def _signal_id(portfolio_id: str, signal_date: date, ticker: str) -> str:
+    digest = hashlib.sha256(f"{portfolio_id}|{signal_date}|{ticker}".encode("utf-8")).hexdigest()[:16]
+    return f"sig_{digest}"
 
 
 class PortfolioRiskService:
@@ -260,7 +266,170 @@ class PortfolioRiskService:
                 "max_sector_weight": max_sector_weight,
             },
             "requires_human_confirmation": True,
-            "approval_status": "not_supported_in_pr_13",
+            "approval_status": self._signal_approval_status(portfolio_id=portfolio_id, signal_date=as_of),
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def generate_draft_signals(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        signal_date: str | date | datetime | None = None,
+        valid_for: str | date | datetime | None = None,
+        current_positions: dict[str, float] | None = None,
+        replace: bool = True,
+        max_single_stock_weight: float = 0.12,
+        max_sector_weight: float = 0.40,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        signal = self._resolve_allocation_date(portfolio_id=portfolio_id, as_of_date=signal_date)
+        valid = _parse_date(valid_for, field_name="valid_for") or signal + timedelta(days=1)
+        if valid < signal:
+            raise PortfolioRiskError("valid_for 不能早于 signal_date")
+        self._ensure_signal_slot(portfolio_id=portfolio_id, signal_date=signal, replace=replace)
+        plan = self.trade_plan(
+            portfolio_id=portfolio_id,
+            as_of_date=signal,
+            max_single_stock_weight=max_single_stock_weight,
+            max_sector_weight=max_sector_weight,
+        )
+        positions = plan["target_positions"]
+        if not positions:
+            raise PortfolioRiskError("没有可生成信号的目标持仓，请先运行组合风控分配。")
+        now = _utc_now()
+        current = current_positions or {}
+        with self.store.connect() as conn:
+            if replace:
+                conn.execute(
+                    """
+                    DELETE FROM execution_signals
+                    WHERE signal_date = ? AND portfolio_id = ? AND status = 'draft'
+                    """,
+                    [signal, portfolio_id],
+                )
+            for position in positions:
+                ticker = position["ticker"]
+                current_weight = _round_weight(_float(current.get(ticker), position.get("current_weight", 0.0)))
+                target_weight = _round_weight(position["target_weight"])
+                conn.execute(
+                    """
+                    INSERT INTO execution_signals (
+                      signal_id, signal_date, valid_for, portfolio_id, ticker,
+                      ticker_name, target_weight, current_weight, action,
+                      strategy_sources, theme, reason, risk, status,
+                      created_at, approved_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, NULL)
+                    """,
+                    [
+                        _signal_id(portfolio_id, signal, ticker),
+                        signal,
+                        valid,
+                        portfolio_id,
+                        ticker,
+                        position["ticker_name"],
+                        target_weight,
+                        current_weight,
+                        self._signal_action(target_weight, current_weight),
+                        json.dumps(position["strategy_sources"], ensure_ascii=False),
+                        position.get("theme"),
+                        position["reason"],
+                        position["risk"],
+                        now,
+                    ],
+                )
+        signals = self.list_signals(portfolio_id=portfolio_id, signal_date=signal, status="draft")
+        return {
+            "status": "draft",
+            "portfolio_id": portfolio_id,
+            "signal_date": signal.isoformat(),
+            "valid_for": valid.isoformat(),
+            "signals_written": len(signals),
+            "execution_signals": signals,
+            "requires_human_confirmation": True,
+            "approval_status": "draft",
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def list_signals(
+        self,
+        *,
+        portfolio_id: str | None = None,
+        signal_date: str | date | datetime | None = None,
+        status: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        self.store.initialize()
+        capped_limit = min(max(int(limit), 1), 500)
+        filters: list[str] = []
+        params: list[Any] = []
+        if portfolio_id:
+            filters.append("portfolio_id = ?")
+            params.append(portfolio_id.strip())
+        parsed_signal = _parse_date(signal_date, field_name="signal_date")
+        if parsed_signal:
+            filters.append("signal_date = ?")
+            params.append(parsed_signal)
+        if status:
+            filters.append("status = ?")
+            params.append(status.strip())
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        params.append(capped_limit)
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT signal_id, signal_date, valid_for, portfolio_id, ticker,
+                       ticker_name, target_weight, current_weight, action,
+                       strategy_sources, theme, reason, risk, status,
+                       created_at, approved_at
+                FROM execution_signals
+                {where}
+                ORDER BY signal_date DESC, portfolio_id, target_weight DESC, ticker
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._row_to_signal(row) for row in rows]
+
+    def approve_plan(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        signal_date: str | date | datetime | None = None,
+        confirm_risk: bool = False,
+        simulation_only: bool = True,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        signal = self._resolve_signal_date(portfolio_id=portfolio_id, signal_date=signal_date)
+        if not confirm_risk:
+            raise PortfolioRiskError("审批前必须确认风险提示。")
+        if not simulation_only:
+            raise PortfolioRiskError("PR-14 仅支持模拟审批，不支持实盘执行。")
+        signals = self.list_signals(portfolio_id=portfolio_id, signal_date=signal, status="draft")
+        if not signals:
+            raise PortfolioRiskError("没有可审批的 draft 信号，请先生成草案信号。")
+        self._validate_signals_for_approval(signals)
+        approved_at = _utc_now()
+        with self.store.connect() as conn:
+            conn.execute(
+                """
+                UPDATE execution_signals
+                SET status = 'approved', approved_at = ?
+                WHERE portfolio_id = ? AND signal_date = ? AND status = 'draft'
+                """,
+                [approved_at, portfolio_id, signal],
+            )
+        approved = self.list_signals(portfolio_id=portfolio_id, signal_date=signal, status="approved")
+        return {
+            "status": "approved",
+            "portfolio_id": portfolio_id,
+            "signal_date": signal.isoformat(),
+            "approved_count": len(approved),
+            "execution_signals": approved,
+            "simulation_only": True,
+            "export_enabled": False,
             "research_only": True,
             "live_trading": False,
         }
@@ -304,6 +473,70 @@ class PortfolioRiskService:
         if latest is None:
             raise PortfolioRiskError("没有策略分配结果，请先运行组合风控分配。")
         return latest
+
+    def _resolve_signal_date(
+        self,
+        *,
+        portfolio_id: str,
+        signal_date: str | date | datetime | None,
+    ) -> date:
+        parsed = _parse_date(signal_date, field_name="signal_date")
+        if parsed:
+            return parsed
+        with self.store.connect(read_only=True) as conn:
+            row = conn.execute(
+                "SELECT MAX(signal_date) FROM execution_signals WHERE portfolio_id = ?",
+                [portfolio_id],
+            ).fetchone()
+        latest = _row_date(row[0]) if row and row[0] else None
+        if latest is None:
+            raise PortfolioRiskError("没有 execution_signals，请先生成草案信号。")
+        return latest
+
+    def _ensure_signal_slot(self, *, portfolio_id: str, signal_date: date, replace: bool) -> None:
+        with self.store.connect(read_only=True) as conn:
+            protected = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM execution_signals
+                WHERE portfolio_id = ?
+                  AND signal_date = ?
+                  AND status IN ('approved', 'exported', 'executed')
+                """,
+                [portfolio_id, signal_date],
+            ).fetchone()[0]
+            draft = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM execution_signals
+                WHERE portfolio_id = ? AND signal_date = ? AND status = 'draft'
+                """,
+                [portfolio_id, signal_date],
+            ).fetchone()[0]
+        if protected:
+            raise PortfolioRiskError("已有已审批或已导出的信号，不能覆盖。")
+        if draft and not replace:
+            raise PortfolioRiskError("已有 draft 信号；如需重建，请启用 replace。")
+
+    def _signal_approval_status(self, *, portfolio_id: str, signal_date: date) -> str:
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM execution_signals
+                WHERE portfolio_id = ? AND signal_date = ?
+                GROUP BY status
+                """,
+                [portfolio_id, signal_date],
+            ).fetchall()
+        counts = {row[0]: int(row[1]) for row in rows}
+        if counts.get("approved", 0) > 0:
+            return "approved_for_simulation"
+        if counts.get("draft", 0) > 0:
+            return "draft_signals_generated"
+        if counts.get("exported", 0) > 0 or counts.get("executed", 0) > 0:
+            return "post_approval_state"
+        return "draft_not_generated"
 
     @staticmethod
     def _ranking_to_candidate(row: dict[str, Any]) -> AllocationCandidate:
@@ -585,6 +818,60 @@ class PortfolioRiskService:
             "strategy_name": row[10] or row[2],
             "strategy_type": row[11] or "unknown",
         }
+
+    @staticmethod
+    def _row_to_signal(row: tuple[Any, ...]) -> dict[str, Any]:
+        signal_date = _row_date(row[1])
+        valid_for = _row_date(row[2])
+        try:
+            strategy_sources = json.loads(row[9] or "[]")
+        except json.JSONDecodeError:
+            strategy_sources = []
+        return {
+            "signal_id": row[0],
+            "signal_date": signal_date.isoformat() if signal_date else None,
+            "valid_for": valid_for.isoformat() if valid_for else None,
+            "portfolio_id": row[3],
+            "ticker": row[4],
+            "ticker_name": row[5],
+            "target_weight": _float(row[6]),
+            "current_weight": _float(row[7]),
+            "action": row[8],
+            "strategy_sources": strategy_sources if isinstance(strategy_sources, list) else [],
+            "theme": row[10],
+            "reason": row[11],
+            "risk": row[12],
+            "status": row[13],
+            "created_at": row[14].isoformat() if row[14] else None,
+            "approved_at": row[15].isoformat() if row[15] else None,
+        }
+
+    @staticmethod
+    def _signal_action(target_weight: float, current_weight: float) -> str:
+        delta = target_weight - current_weight
+        if target_weight <= 0 and current_weight > 0:
+            return "sell"
+        if abs(delta) < 0.0005:
+            return "hold"
+        if current_weight <= 0 and delta > 0:
+            return "buy"
+        if delta > 0:
+            return "increase"
+        return "reduce"
+
+    @staticmethod
+    def _validate_signals_for_approval(signals: list[dict[str, Any]]) -> None:
+        if any(row["status"] != "draft" for row in signals):
+            raise PortfolioRiskError("只能审批 draft 状态的信号。")
+        if any(row["target_weight"] < 0 for row in signals):
+            raise PortfolioRiskError("目标权重不能为负。")
+        if any(row["target_weight"] > 0.30 for row in signals):
+            raise PortfolioRiskError("单票目标权重超过审批上限。")
+        total_weight = sum(row["target_weight"] for row in signals)
+        if total_weight > 1.0:
+            raise PortfolioRiskError("组合目标仓位超过 100%，不能审批。")
+        if any(row["valid_for"] and row["signal_date"] and row["valid_for"] < row["signal_date"] for row in signals):
+            raise PortfolioRiskError("存在已过期或无效的信号有效期。")
 
     @staticmethod
     def _drawdown_rules(current_drawdown: float) -> list[dict[str, Any]]:

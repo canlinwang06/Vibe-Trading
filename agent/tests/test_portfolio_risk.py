@@ -177,7 +177,7 @@ def test_portfolio_trade_plan_outputs_draft_target_positions(
     )
 
     assert plan["status"] == "draft"
-    assert plan["approval_status"] == "not_supported_in_pr_13"
+    assert plan["approval_status"] == "draft_not_generated"
     assert plan["requires_human_confirmation"] is True
     assert plan["live_trading"] is False
     assert plan["target_positions"]
@@ -187,6 +187,80 @@ def test_portfolio_trade_plan_outputs_draft_target_positions(
     with store.connect(read_only=True) as conn:
         signal_count = conn.execute("SELECT COUNT(*) FROM execution_signals").fetchone()[0]
     assert signal_count == 0
+
+
+def test_portfolio_generate_draft_signals_and_approve_for_simulation(
+    strategy_lab: StrategyLabService,
+    backtest_factory: BacktestFactoryService,
+    portfolio_risk: PortfolioRiskService,
+    store: AShareDataStore,
+) -> None:
+    _seed_backtest_runs(strategy_lab, backtest_factory, store)
+    portfolio_risk.allocate(portfolio_id="cn_a_main", as_of_date="2026-06-23", top_n=5)
+
+    draft = portfolio_risk.generate_draft_signals(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        valid_for="2026-06-24",
+        current_positions={},
+    )
+
+    assert draft["status"] == "draft"
+    assert draft["signals_written"] > 0
+    assert draft["valid_for"] == "2026-06-24"
+    assert all(row["status"] == "draft" for row in draft["execution_signals"])
+    assert all(row["action"] == "buy" for row in draft["execution_signals"])
+    assert all(row["approved_at"] is None for row in draft["execution_signals"])
+
+    listed = portfolio_risk.list_signals(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        status="draft",
+    )
+    assert len(listed) == draft["signals_written"]
+
+    with pytest.raises(PortfolioRiskError, match="审批前必须确认风险提示"):
+        portfolio_risk.approve_plan(portfolio_id="cn_a_main", signal_date="2026-06-23")
+
+    approved = portfolio_risk.approve_plan(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        confirm_risk=True,
+        simulation_only=True,
+    )
+
+    assert approved["status"] == "approved"
+    assert approved["approved_count"] == draft["signals_written"]
+    assert approved["simulation_only"] is True
+    assert approved["export_enabled"] is False
+    assert approved["live_trading"] is False
+    assert all(row["status"] == "approved" for row in approved["execution_signals"])
+    assert all(row["approved_at"] for row in approved["execution_signals"])
+
+    approved_plan = portfolio_risk.trade_plan(portfolio_id="cn_a_main", as_of_date="2026-06-23")
+    assert approved_plan["approval_status"] == "approved_for_simulation"
+
+    with pytest.raises(PortfolioRiskError, match="不能覆盖"):
+        portfolio_risk.generate_draft_signals(portfolio_id="cn_a_main", signal_date="2026-06-23")
+
+
+def test_portfolio_approval_rejects_live_execution_request(
+    strategy_lab: StrategyLabService,
+    backtest_factory: BacktestFactoryService,
+    portfolio_risk: PortfolioRiskService,
+    store: AShareDataStore,
+) -> None:
+    _seed_backtest_runs(strategy_lab, backtest_factory, store)
+    portfolio_risk.allocate(portfolio_id="cn_a_main", as_of_date="2026-06-23", top_n=5)
+    portfolio_risk.generate_draft_signals(portfolio_id="cn_a_main", signal_date="2026-06-23")
+
+    with pytest.raises(PortfolioRiskError, match="仅支持模拟审批"):
+        portfolio_risk.approve_plan(
+            portfolio_id="cn_a_main",
+            signal_date="2026-06-23",
+            confirm_risk=True,
+            simulation_only=False,
+        )
 
 
 def test_portfolio_allocation_risk_off_returns_cash_only(
@@ -253,6 +327,42 @@ def test_portfolio_risk_api_round_trip(client: TestClient) -> None:
     assert plan.status_code == 200
     assert plan.json()["target_positions"]
     assert plan.json()["research_only"] is True
+
+    draft = client.post(
+        "/api/portfolio-risk/generate-signals",
+        json={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "valid_for": "2026-06-24",
+        },
+    )
+    assert draft.status_code == 200
+    assert draft.json()["signals_written"] > 0
+
+    signals = client.get("/api/portfolio-risk/signals?portfolio_id=cn_a_main&status=draft")
+    assert signals.status_code == 200
+    assert signals.json()["signal_count"] == draft.json()["signals_written"]
+
+    rejected = client.post(
+        "/api/portfolio-risk/approve-plan",
+        json={"portfolio_id": "cn_a_main", "signal_date": "2026-06-23", "confirm_risk": False},
+    )
+    assert rejected.status_code == 400
+    assert "确认风险提示" in rejected.json()["detail"]
+
+    approved = client.post(
+        "/api/portfolio-risk/approve-plan",
+        json={
+            "portfolio_id": "cn_a_main",
+            "signal_date": "2026-06-23",
+            "confirm_risk": True,
+            "simulation_only": True,
+        },
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["export_enabled"] is False
+    assert approved.json()["live_trading"] is False
 
 
 def test_portfolio_risk_api_returns_chinese_error_without_allocations(client: TestClient) -> None:
