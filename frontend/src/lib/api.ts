@@ -180,6 +180,18 @@ export const api = {
     if (params.tolerance !== undefined) q.set("tolerance", String(params.tolerance));
     return request<JoinQuantExecutionReportSummary>(`/api/joinquant/execution-reports/summary?${q.toString()}`);
   },
+  joinQuantSimulationReadiness: (params: JoinQuantSimulationReadinessQuery) => {
+    const q = new URLSearchParams();
+    q.set("portfolio_id", params.portfolio_id);
+    if (params.lookback_days !== undefined) q.set("lookback_days", String(params.lookback_days));
+    if (params.min_batches !== undefined) q.set("min_batches", String(params.min_batches));
+    if (params.tolerance !== undefined) q.set("tolerance", String(params.tolerance));
+    if (params.max_failed_rate !== undefined) q.set("max_failed_rate", String(params.max_failed_rate));
+    if (params.max_missing_rate !== undefined) q.set("max_missing_rate", String(params.max_missing_rate));
+    if (params.max_deviation_rate !== undefined) q.set("max_deviation_rate", String(params.max_deviation_rate));
+    if (params.max_signal_delay_days !== undefined) q.set("max_signal_delay_days", String(params.max_signal_delay_days));
+    return request<JoinQuantSimulationReadinessReport>(`/api/joinquant/simulation-readiness?${q.toString()}`);
+  },
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -488,6 +500,90 @@ export interface JoinQuantExecutionReportListResponse {
   status: string;
   count: number;
   reports: JoinQuantExecutionReport[];
+}
+
+export interface JoinQuantSimulationReadinessQuery {
+  portfolio_id: string;
+  lookback_days?: number;
+  min_batches?: number;
+  tolerance?: number;
+  max_failed_rate?: number;
+  max_missing_rate?: number;
+  max_deviation_rate?: number;
+  max_signal_delay_days?: number;
+}
+
+export interface JoinQuantReadinessCheck {
+  name: string;
+  status: "pass" | "warning" | "fail" | string;
+  observed: number;
+  threshold: number;
+  message: string;
+}
+
+export interface JoinQuantReadinessBacktestRisk {
+  status: "ok" | "unknown" | "needs_review" | string;
+  run_count: number;
+  worst_max_drawdown: number;
+  avg_sharpe: number;
+  avg_trade_count: number;
+  message: string;
+}
+
+export interface JoinQuantReadinessDailySummary {
+  signal_date: string;
+  trade_date: string;
+  status: string;
+  report_count: number;
+  signal_count: number;
+  failed_count: number;
+  missing_report_count: number;
+  unmatched_report_count: number;
+  max_abs_weight_diff: number;
+  total_abs_weight_diff: number;
+  deviation_count: number;
+  signal_delay_days: number;
+  action_required: boolean;
+}
+
+export interface JoinQuantSimulationReadinessReport {
+  status: "ready" | "needs_more_data" | "needs_review" | string;
+  recommendation: "continue_simulation" | "extend_observation" | "fix_before_live" | string;
+  readiness_score: number;
+  portfolio_id: string;
+  lookback_days: number;
+  window_start: string;
+  window_end: string;
+  tolerance: number;
+  min_batches: number;
+  observed_batch_count: number;
+  signal_batch_count: number;
+  missing_signal_batch_count: number;
+  totals: {
+    report_count: number;
+    signal_count: number;
+    failed_count: number;
+    missing_report_count: number;
+    unmatched_report_count: number;
+    deviation_count: number;
+    limit_or_suspend_issue_count: number;
+    total_abs_weight_diff: number;
+    max_abs_weight_diff: number;
+    avg_signal_delay_days: number;
+    max_signal_delay_days: number;
+  };
+  rates: {
+    failed_rate: number;
+    missing_report_rate: number;
+    unmatched_report_rate: number;
+    deviation_rate: number;
+  };
+  backtest_risk: JoinQuantReadinessBacktestRisk;
+  checks: JoinQuantReadinessCheck[];
+  findings: string[];
+  daily_summaries: JoinQuantReadinessDailySummary[];
+  research_only: boolean;
+  live_trading: boolean;
 }
 
 // --- Types matching backend API contracts ---
