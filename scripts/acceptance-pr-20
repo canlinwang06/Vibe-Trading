@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr20-simulation-readiness.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-20 JoinQuant simulation-readiness tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_joinquant_adapter.py" -q
+
+step "Check JoinQuant simulation-readiness API route is mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/joinquant/simulation-readiness",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing JoinQuant simulation-readiness API routes: {missing}")
+PY
+
+step "Check PR-20 guardrails"
+if rg -n "OPENAI_API_KEY|joinquant\\.com|window\\.open|playwright|selenium" \
+  "$ROOT/agent/src/joinquant_adapter" \
+  "$ROOT/agent/src/api/joinquant_routes.py"; then
+  printf "PR-20 acceptance failed: forbidden paid-key or JoinQuant automation surface found\n" >&2
+  exit 1
+fi
+
+if ! rg -n "simulation_readiness_report|/api/joinquant/simulation-readiness|live_trading.: False" \
+  "$ROOT/agent/src/joinquant_adapter/service.py" \
+  "$ROOT/agent/src/api/joinquant_routes.py" >/dev/null; then
+  printf "PR-20 acceptance failed: readiness report or research-only guardrail not found\n" >&2
+  exit 1
+fi
+
+printf "\nPR-20 acceptance passed.\n"

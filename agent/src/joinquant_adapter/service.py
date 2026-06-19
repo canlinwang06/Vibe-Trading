@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from src.ashare_data.store import AShareDataStore
@@ -50,6 +50,7 @@ EXECUTION_STATUS_ALIASES = {
 }
 SUCCESS_REPORT_STATUSES = {"filled", "partially_filled", "held", "skipped"}
 FAILED_REPORT_STATUSES = {"cancelled", "rejected", "error"}
+LIMIT_OR_SUSPEND_KEYWORDS = ("涨停", "跌停", "停牌", "limit", "suspend", "suspended")
 
 
 def _utc_now() -> datetime:
@@ -538,6 +539,405 @@ class JoinQuantExportService:
             "research_only": True,
             "live_trading": False,
         }
+
+    def simulation_readiness_report(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        lookback_days: int = 90,
+        min_batches: int = 20,
+        tolerance: float = 0.01,
+        max_failed_rate: float = 0.05,
+        max_missing_rate: float = 0.05,
+        max_deviation_rate: float = 0.10,
+        max_signal_delay_days: int = 3,
+    ) -> dict[str, Any]:
+        """Summarize JoinQuant simulation health before any small-capital live trial."""
+        self.store.initialize()
+        lookback_days = min(max(int(lookback_days), 1), 365)
+        min_batches = min(max(int(min_batches), 1), 250)
+        tolerance = self._bounded_ratio(tolerance, field_name="tolerance")
+        max_failed_rate = self._bounded_ratio(max_failed_rate, field_name="max_failed_rate")
+        max_missing_rate = self._bounded_ratio(max_missing_rate, field_name="max_missing_rate")
+        max_deviation_rate = self._bounded_ratio(max_deviation_rate, field_name="max_deviation_rate")
+        max_signal_delay_days = min(max(int(max_signal_delay_days), 0), 30)
+        latest_trade = self._latest_report_trade_date(portfolio_id)
+        window_start = latest_trade - timedelta(days=lookback_days - 1)
+        batches = self._report_batches(
+            portfolio_id=portfolio_id,
+            start_date=window_start,
+            end_date=latest_trade,
+        )
+        if not batches:
+            raise JoinQuantExportError("没有可评估的聚宽模拟盘报告，请先导入执行报告。")
+
+        daily_summaries: list[dict[str, Any]] = []
+        total_reports = 0
+        total_signals = 0
+        failed_count = 0
+        unmatched_count = 0
+        missing_report_count = 0
+        deviation_count = 0
+        total_abs_weight_diff = 0.0
+        max_abs_weight_diff = 0.0
+        signal_delay_days: list[int] = []
+        limit_or_suspend_issue_count = 0
+
+        for batch in batches:
+            summary = self.execution_report_summary(
+                portfolio_id=portfolio_id,
+                signal_date=batch["signal_date"],
+                trade_date=batch["trade_date"],
+                tolerance=tolerance,
+            )
+            reports = self.list_execution_reports(
+                portfolio_id=portfolio_id,
+                signal_date=batch["signal_date"],
+                trade_date=batch["trade_date"],
+                limit=500,
+            )
+            delay_days = (batch["trade_date"] - batch["signal_date"]).days
+            signal_delay_days.append(delay_days)
+            total_reports += summary["report_count"]
+            total_signals += summary["signal_count"]
+            failed_count += summary["failed_count"]
+            unmatched_count += summary["unmatched_report_count"]
+            missing_report_count += summary["missing_report_count"]
+            batch_deviation_count = sum(
+                1 for row in summary["deviations"] if float(row["abs_weight_diff"] or 0.0) > tolerance
+            )
+            deviation_count += batch_deviation_count
+            total_abs_weight_diff = round(total_abs_weight_diff + float(summary["total_abs_weight_diff"]), 6)
+            max_abs_weight_diff = max(max_abs_weight_diff, float(summary["max_abs_weight_diff"]))
+            limit_or_suspend_issue_count += self._count_limit_or_suspend_issues(reports)
+            daily_summaries.append({
+                "signal_date": summary["signal_date"],
+                "trade_date": summary["trade_date"],
+                "status": summary["status"],
+                "report_count": summary["report_count"],
+                "signal_count": summary["signal_count"],
+                "failed_count": summary["failed_count"],
+                "missing_report_count": summary["missing_report_count"],
+                "unmatched_report_count": summary["unmatched_report_count"],
+                "max_abs_weight_diff": summary["max_abs_weight_diff"],
+                "total_abs_weight_diff": summary["total_abs_weight_diff"],
+                "deviation_count": batch_deviation_count,
+                "signal_delay_days": delay_days,
+                "action_required": summary["action_required"],
+            })
+
+        signal_batches = self._signal_batches(
+            portfolio_id=portfolio_id,
+            start_date=window_start,
+            end_date=latest_trade,
+        )
+        report_signal_dates = {batch["signal_date"] for batch in batches}
+        missing_batch_signal_count = sum(
+            count for signal_date, count in signal_batches.items() if signal_date not in report_signal_dates
+        )
+        missing_signal_batch_count = sum(1 for signal_date in signal_batches if signal_date not in report_signal_dates)
+        total_signals += missing_batch_signal_count
+        missing_report_count += missing_batch_signal_count
+
+        backtest_risk = self._backtest_risk_snapshot()
+        avg_delay = round(sum(signal_delay_days) / len(signal_delay_days), 2) if signal_delay_days else 0.0
+        max_delay = max(signal_delay_days) if signal_delay_days else 0
+        rates = {
+            "failed_rate": self._rate(failed_count, total_reports),
+            "missing_report_rate": self._rate(missing_report_count, total_signals),
+            "unmatched_report_rate": self._rate(unmatched_count, total_reports),
+            "deviation_rate": self._rate(deviation_count, total_reports),
+        }
+        checks = [
+            self._check(
+                "observation_window",
+                observed=len(batches),
+                threshold=min_batches,
+                ok=len(batches) >= min_batches,
+                message_ok="模拟盘观察批次数已达到验收下限。",
+                message_fail="模拟盘观察批次数不足，继续运行后再评估。",
+                fail_status="warning",
+            ),
+            self._check(
+                "execution_failure_rate",
+                observed=rates["failed_rate"],
+                threshold=max_failed_rate,
+                ok=rates["failed_rate"] <= max_failed_rate and failed_count == 0,
+                message_ok="执行失败率在可接受范围内。",
+                message_fail="存在失败、撤单或拒单记录，需要复盘原因。",
+            ),
+            self._check(
+                "report_coverage",
+                observed=rates["missing_report_rate"],
+                threshold=max_missing_rate,
+                ok=rates["missing_report_rate"] <= max_missing_rate and missing_signal_batch_count == 0,
+                message_ok="计划信号和聚宽回报匹配充分。",
+                message_fail="存在缺失回报或未覆盖的信号批次。",
+            ),
+            self._check(
+                "weight_deviation",
+                observed=rates["deviation_rate"],
+                threshold=max_deviation_rate,
+                ok=rates["deviation_rate"] <= max_deviation_rate and max_abs_weight_diff <= tolerance,
+                message_ok="目标仓位和实际仓位偏差可控。",
+                message_fail="目标仓位和实际仓位偏差超出容忍度。",
+            ),
+            self._check(
+                "signal_delay",
+                observed=max_delay,
+                threshold=max_signal_delay_days,
+                ok=max_delay <= max_signal_delay_days,
+                message_ok="信号日至执行日延迟在可接受范围内。",
+                message_fail="存在较长的信号执行延迟。",
+            ),
+            self._check(
+                "limit_or_suspend_handling",
+                observed=limit_or_suspend_issue_count,
+                threshold=0,
+                ok=limit_or_suspend_issue_count == 0,
+                message_ok="未发现涨跌停或停牌相关失败记录。",
+                message_fail="存在涨跌停或停牌相关失败记录，需要检查聚宽侧处理。",
+                fail_status="warning",
+            ),
+            self._check(
+                "backtest_drawdown",
+                observed=backtest_risk["worst_max_drawdown"],
+                threshold=-0.10,
+                ok=backtest_risk["status"] in {"ok", "unknown"},
+                message_ok=backtest_risk["message"],
+                message_fail=backtest_risk["message"],
+                fail_status="warning" if backtest_risk["status"] == "unknown" else "fail",
+            ),
+        ]
+        status, recommendation, readiness_score = self._readiness_decision(checks)
+        findings = self._readiness_findings(
+            status=status,
+            failed_count=failed_count,
+            missing_report_count=missing_report_count,
+            deviation_count=deviation_count,
+            max_abs_weight_diff=max_abs_weight_diff,
+            max_delay=max_delay,
+            limit_or_suspend_issue_count=limit_or_suspend_issue_count,
+            backtest_risk=backtest_risk,
+            min_batches=min_batches,
+            observed_batches=len(batches),
+            max_signal_delay_days=max_signal_delay_days,
+        )
+        return {
+            "status": status,
+            "recommendation": recommendation,
+            "readiness_score": readiness_score,
+            "portfolio_id": portfolio_id,
+            "lookback_days": lookback_days,
+            "window_start": window_start.isoformat(),
+            "window_end": latest_trade.isoformat(),
+            "tolerance": tolerance,
+            "min_batches": min_batches,
+            "observed_batch_count": len(batches),
+            "signal_batch_count": len(signal_batches),
+            "missing_signal_batch_count": missing_signal_batch_count,
+            "totals": {
+                "report_count": total_reports,
+                "signal_count": total_signals,
+                "failed_count": failed_count,
+                "missing_report_count": missing_report_count,
+                "unmatched_report_count": unmatched_count,
+                "deviation_count": deviation_count,
+                "limit_or_suspend_issue_count": limit_or_suspend_issue_count,
+                "total_abs_weight_diff": round(total_abs_weight_diff, 6),
+                "max_abs_weight_diff": round(max_abs_weight_diff, 6),
+                "avg_signal_delay_days": avg_delay,
+                "max_signal_delay_days": max_delay,
+            },
+            "rates": rates,
+            "backtest_risk": backtest_risk,
+            "checks": checks,
+            "findings": findings,
+            "daily_summaries": daily_summaries,
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def _latest_report_trade_date(self, portfolio_id: str) -> date:
+        with self.store.connect(read_only=True) as conn:
+            row = conn.execute(
+                "SELECT MAX(trade_date) FROM jq_execution_reports WHERE portfolio_id = ?",
+                [portfolio_id],
+            ).fetchone()
+        latest = row[0] if row and row[0] else None
+        parsed = _parse_date(latest, field_name="trade_date")
+        if parsed is None:
+            raise JoinQuantExportError("没有可评估的聚宽模拟盘报告，请先导入执行报告。")
+        return parsed
+
+    def _report_batches(self, *, portfolio_id: str, start_date: date, end_date: date) -> list[dict[str, date]]:
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT signal_date, trade_date
+                FROM jq_execution_reports
+                WHERE portfolio_id = ? AND trade_date BETWEEN ? AND ?
+                GROUP BY signal_date, trade_date
+                ORDER BY trade_date, signal_date
+                """,
+                [portfolio_id, start_date, end_date],
+            ).fetchall()
+        return [
+            {
+                "signal_date": _parse_date(row[0], field_name="signal_date") or start_date,
+                "trade_date": _parse_date(row[1], field_name="trade_date") or end_date,
+            }
+            for row in rows
+        ]
+
+    def _signal_batches(self, *, portfolio_id: str, start_date: date, end_date: date) -> dict[date, int]:
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT signal_date, COUNT(*)
+                FROM execution_signals
+                WHERE portfolio_id = ? AND signal_date BETWEEN ? AND ?
+                GROUP BY signal_date
+                ORDER BY signal_date
+                """,
+                [portfolio_id, start_date, end_date],
+            ).fetchall()
+        result: dict[date, int] = {}
+        for row in rows:
+            parsed = _parse_date(row[0], field_name="signal_date")
+            if parsed is not None:
+                result[parsed] = int(row[1] or 0)
+        return result
+
+    @staticmethod
+    def _bounded_ratio(value: float, *, field_name: str) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError) as exc:
+            raise JoinQuantExportError(f"{field_name} 必须是 0 到 1 之间的小数。") from exc
+        if parsed < 0 or parsed > 1:
+            raise JoinQuantExportError(f"{field_name} 必须是 0 到 1 之间的小数。")
+        return parsed
+
+    @staticmethod
+    def _rate(numerator: int | float, denominator: int | float) -> float:
+        return round(float(numerator) / float(denominator), 6) if denominator else 0.0
+
+    @staticmethod
+    def _count_limit_or_suspend_issues(reports: list[dict[str, Any]]) -> int:
+        count = 0
+        for report in reports:
+            message = str(report.get("error_message") or "").lower()
+            if any(keyword.lower() in message for keyword in LIMIT_OR_SUSPEND_KEYWORDS):
+                count += 1
+        return count
+
+    def _backtest_risk_snapshot(self) -> dict[str, Any]:
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT strategy_id, end_date, max_drawdown, sharpe, trade_count
+                FROM backtest_runs
+                WHERE market = 'CN_A' AND status = 'completed'
+                ORDER BY end_date DESC, strategy_id
+                LIMIT 50
+                """
+            ).fetchall()
+        if not rows:
+            return {
+                "status": "unknown",
+                "run_count": 0,
+                "worst_max_drawdown": 0.0,
+                "avg_sharpe": 0.0,
+                "avg_trade_count": 0.0,
+                "message": "暂无已完成 A 股回测结果，实盘前仍需补充回撤和稳定性证据。",
+            }
+        drawdowns = [float(row[2] or 0.0) for row in rows]
+        sharpes = [float(row[3] or 0.0) for row in rows]
+        trade_counts = [float(row[4] or 0.0) for row in rows]
+        worst_drawdown = min(drawdowns)
+        avg_sharpe = round(sum(sharpes) / len(sharpes), 4)
+        avg_trade_count = round(sum(trade_counts) / len(trade_counts), 2)
+        status = "needs_review" if abs(worst_drawdown) >= 0.10 else "ok"
+        message = (
+            f"已检查 {len(rows)} 个完成回测，最差最大回撤 {worst_drawdown:.2%}。"
+            if status == "ok"
+            else f"回测最差最大回撤 {worst_drawdown:.2%}，达到复盘阈值。"
+        )
+        return {
+            "status": status,
+            "run_count": len(rows),
+            "worst_max_drawdown": round(worst_drawdown, 6),
+            "avg_sharpe": avg_sharpe,
+            "avg_trade_count": avg_trade_count,
+            "message": message,
+        }
+
+    @staticmethod
+    def _check(
+        name: str,
+        *,
+        observed: int | float,
+        threshold: int | float,
+        ok: bool,
+        message_ok: str,
+        message_fail: str,
+        fail_status: str = "fail",
+    ) -> dict[str, Any]:
+        return {
+            "name": name,
+            "status": "pass" if ok else fail_status,
+            "observed": observed,
+            "threshold": threshold,
+            "message": message_ok if ok else message_fail,
+        }
+
+    @staticmethod
+    def _readiness_decision(checks: list[dict[str, Any]]) -> tuple[str, str, int]:
+        fail_count = sum(1 for item in checks if item["status"] == "fail")
+        warning_count = sum(1 for item in checks if item["status"] == "warning")
+        score = max(0, 100 - fail_count * 24 - warning_count * 10)
+        if fail_count:
+            return "needs_review", "fix_before_live", score
+        if warning_count:
+            return "needs_more_data", "extend_observation", score
+        return "ready", "continue_simulation", score
+
+    @staticmethod
+    def _readiness_findings(
+        *,
+        status: str,
+        failed_count: int,
+        missing_report_count: int,
+        deviation_count: int,
+        max_abs_weight_diff: float,
+        max_delay: int,
+        limit_or_suspend_issue_count: int,
+        backtest_risk: dict[str, Any],
+        min_batches: int,
+        observed_batches: int,
+        max_signal_delay_days: int,
+    ) -> list[str]:
+        findings: list[str] = []
+        if observed_batches < min_batches:
+            findings.append(f"模拟盘观察批次 {observed_batches}/{min_batches}，建议继续积累样本。")
+        if failed_count:
+            findings.append(f"发现 {failed_count} 条失败、撤单或拒单记录，需要定位聚宽侧原因。")
+        if missing_report_count:
+            findings.append(f"发现 {missing_report_count} 条计划信号缺少聚宽执行回报。")
+        if deviation_count:
+            findings.append(f"发现 {deviation_count} 条仓位偏差超阈值，最大偏差 {max_abs_weight_diff:.2%}。")
+        if max_delay > max_signal_delay_days:
+            findings.append(f"最大信号执行延迟 {max_delay} 天，需要检查导出和执行节奏。")
+        if limit_or_suspend_issue_count:
+            findings.append(f"发现 {limit_or_suspend_issue_count} 条涨跌停或停牌相关问题。")
+        if backtest_risk["status"] != "ok":
+            findings.append(backtest_risk["message"])
+        if not findings:
+            findings.append("模拟盘执行、回传和回测风险均未触发阻断项，继续保持人工确认。")
+        if status == "ready":
+            findings.append("当前仅代表模拟盘准备度通过，不构成实盘下单建议。")
+        return findings
 
     def _validated_export_context(
         self,

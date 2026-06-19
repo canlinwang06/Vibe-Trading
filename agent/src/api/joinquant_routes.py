@@ -159,3 +159,28 @@ def register_joinquant_routes(app: FastAPI, require_local_or_auth: AuthDep | Non
             )
         except JoinQuantExportError as exc:
             raise _http_error(exc) from exc
+
+    @app.get("/api/joinquant/simulation-readiness", dependencies=[Depends(auth)])
+    def simulation_readiness_report(
+        portfolio_id: str = Query(default="cn_a_main", min_length=3, max_length=80),
+        lookback_days: int = Query(default=90, ge=1, le=365),
+        min_batches: int = Query(default=20, ge=1, le=250),
+        tolerance: float = Query(default=0.01, ge=0.0, le=1.0),
+        max_failed_rate: float = Query(default=0.05, ge=0.0, le=1.0),
+        max_missing_rate: float = Query(default=0.05, ge=0.0, le=1.0),
+        max_deviation_rate: float = Query(default=0.10, ge=0.0, le=1.0),
+        max_signal_delay_days: int = Query(default=3, ge=0, le=30),
+    ) -> dict[str, Any]:
+        try:
+            return _service().simulation_readiness_report(
+                portfolio_id=portfolio_id,
+                lookback_days=lookback_days,
+                min_batches=min_batches,
+                tolerance=tolerance,
+                max_failed_rate=max_failed_rate,
+                max_missing_rate=max_missing_rate,
+                max_deviation_rate=max_deviation_rate,
+                max_signal_delay_days=max_signal_delay_days,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
