@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.event_radar.event_extraction import EventExtractionError, EventExtractionService
+from src.event_radar.event_mapping import EventMappingError, EventMappingService
 from src.event_radar.source_ingestion import (
     EventSourceIngestionError,
     EventSourceIngestionService,
@@ -57,12 +58,21 @@ class ExtractRunRequest(BaseModel):
     min_relevance: float = Field(default=0.0, ge=0, le=1)
 
 
+class MapRunRequest(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    min_relevance: float = Field(default=0.45, ge=0, le=1)
+
+
 def _service() -> EventSourceIngestionService:
     return EventSourceIngestionService()
 
 
 def _extractor() -> EventExtractionService:
     return EventExtractionService()
+
+
+def _mapper() -> EventMappingService:
+    return EventMappingService()
 
 
 def _resolve_auth(require_local_or_auth: AuthDep | None) -> AuthDep:
@@ -82,6 +92,10 @@ def _http_error(exc: EventSourceIngestionError, status_code: int = 400) -> HTTPE
 
 
 def _event_http_error(exc: EventExtractionError, status_code: int = 400) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=str(exc))
+
+
+def _mapping_http_error(exc: EventMappingError, status_code: int = 400) -> HTTPException:
     return HTTPException(status_code=status_code, detail=str(exc))
 
 
@@ -165,3 +179,43 @@ def register_event_radar_routes(app: FastAPI, require_local_or_auth: AuthDep | N
             return _extractor().get_cluster(cluster_id)
         except EventExtractionError as exc:
             raise _event_http_error(exc, status_code=404) from exc
+
+    @app.get("/api/event-radar/theme-map", dependencies=[Depends(auth)])
+    def list_theme_map(theme: str | None = Query(None)) -> dict[str, Any]:
+        try:
+            rows = _mapper().list_theme_map(theme=theme)
+        except EventMappingError as exc:
+            raise _mapping_http_error(exc) from exc
+        return {"theme_map": rows, "row_count": len(rows)}
+
+    @app.post("/api/event-radar/map/run", dependencies=[Depends(auth)])
+    def run_event_mapping(payload: MapRunRequest) -> dict[str, Any]:
+        try:
+            return _mapper().map_events(
+                min_relevance=payload.min_relevance,
+                limit=payload.limit,
+            )
+        except EventMappingError as exc:
+            raise _mapping_http_error(exc) from exc
+
+    @app.get("/api/event-radar/mappings/sectors", dependencies=[Depends(auth)])
+    def list_event_sector_maps(
+        event_id: str | None = Query(None),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            rows = _mapper().list_event_sector_maps(event_id=event_id, limit=limit)
+        except EventMappingError as exc:
+            raise _mapping_http_error(exc) from exc
+        return {"sector_mappings": rows, "row_count": len(rows)}
+
+    @app.get("/api/event-radar/mappings/stocks", dependencies=[Depends(auth)])
+    def list_event_stock_maps(
+        event_id: str | None = Query(None),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            rows = _mapper().list_event_stock_maps(event_id=event_id, limit=limit)
+        except EventMappingError as exc:
+            raise _mapping_http_error(exc) from exc
+        return {"stock_mappings": rows, "row_count": len(rows)}

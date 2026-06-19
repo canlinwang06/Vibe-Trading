@@ -193,6 +193,40 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "event_sector_map",
+        """
+        CREATE TABLE IF NOT EXISTS event_sector_map (
+          event_id VARCHAR,
+          cluster_id VARCHAR,
+          sector_id VARCHAR,
+          sector_name VARCHAR,
+          theme VARCHAR,
+          sub_theme VARCHAR,
+          relevance DOUBLE,
+          direction VARCHAR,
+          mapping_reason TEXT,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "event_stock_map",
+        """
+        CREATE TABLE IF NOT EXISTS event_stock_map (
+          event_id VARCHAR,
+          cluster_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          theme VARCHAR,
+          sector_id VARCHAR,
+          relevance DOUBLE,
+          direction VARCHAR,
+          mapping_reason TEXT,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
         "market_daily",
         """
         CREATE TABLE IF NOT EXISTS market_daily (
