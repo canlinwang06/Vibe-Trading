@@ -22,6 +22,8 @@ EXPECTED_PR03_TABLES = (
     "theme_map",
     "sectors",
     "sector_members",
+    "event_sector_map",
+    "event_stock_map",
     "market_daily",
     "sector_daily",
     "candidate_pool",
