@@ -32,7 +32,7 @@ const EventReactions = lazy(() =>
   import("@/pages/EventReactions").then((m) => ({ default: m.EventReactions })),
 );
 const CandidatePool = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.CandidatePool })),
+  import("@/pages/CandidatePool").then((m) => ({ default: m.CandidatePool })),
 );
 const StrategyLab = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.StrategyLab })),

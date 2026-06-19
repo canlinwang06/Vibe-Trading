@@ -197,6 +197,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  listCandidatePool: (params: CandidatePoolQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.source) q.set("source", params.source);
+    if (params.included !== undefined && params.included !== null) q.set("included", String(params.included));
+    if (params.min_score !== undefined) q.set("min_score", String(params.min_score));
+    const qs = q.toString();
+    return request<CandidatePoolListResponse>(`/api/candidate-pool${qs ? `?${qs}` : ""}`);
+  },
+  buildCandidatePool: (body: CandidatePoolBuildRequest) =>
+    request<CandidatePoolBuildResponse>("/api/candidate-pool/build", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  addUserCandidate: (body: UserCandidateRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/user-add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  includeCandidate: (body: CandidateDecisionRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/include", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  excludeCandidate: (body: CandidateDecisionRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/exclude", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   eventReactionsCalculate: (body: EventReactionCalculateRequest) =>
     request<EventReactionCalculateResponse>("/api/event-reactions/calculate", {
       method: "POST",
@@ -692,6 +722,71 @@ export interface DailyWorkflowRunResponse {
   steps: DailyWorkflowStepResult[];
   research_only: boolean;
   live_trading: boolean;
+}
+
+export type CandidateIncludedFilter = "all" | "included" | "excluded";
+
+export interface CandidatePoolQuery {
+  as_of_date?: string | null;
+  limit?: number;
+  source?: string | null;
+  included?: boolean | null;
+  min_score?: number;
+}
+
+export interface CandidateRecord {
+  as_of_date?: string | null;
+  ticker: string;
+  ticker_name: string;
+  market?: string;
+  source: string;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  theme?: string | null;
+  event_heat_score: number;
+  sector_heat_score: number;
+  stock_score: number;
+  user_priority?: number;
+  risk_flag: string;
+  included: boolean;
+  reason: string;
+  created_at?: string | null;
+}
+
+export interface CandidatePoolListResponse {
+  candidates: CandidateRecord[];
+  candidate_count: number;
+}
+
+export interface CandidatePoolBuildRequest {
+  as_of_date?: string | null;
+  limit?: number;
+  min_sector_score?: number;
+}
+
+export interface CandidatePoolBuildResponse {
+  status: string;
+  as_of_date: string;
+  rows_written: number;
+  candidate_count: number;
+  candidates: CandidateRecord[];
+}
+
+export interface UserCandidateRequest {
+  ticker: string;
+  ticker_name?: string | null;
+  as_of_date?: string | null;
+  theme?: string | null;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  reason?: string | null;
+  user_priority?: number;
+}
+
+export interface CandidateDecisionRequest {
+  ticker: string;
+  as_of_date?: string | null;
+  reason?: string | null;
 }
 
 export type EventReactionWindow = "T+1" | "T+5" | "T+20" | "T+60";
