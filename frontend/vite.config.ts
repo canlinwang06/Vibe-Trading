@@ -8,6 +8,7 @@ const PROXY_PATHS = [
   "/swarm/runs",
   "/settings/llm",
   "/settings/data-sources",
+  "/api",
   "/mandate",
   "/live",
   "/upload",

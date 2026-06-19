@@ -44,7 +44,7 @@ const TradePlan = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.TradePlan })),
 );
 const JoinQuantExport = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.JoinQuantExport })),
+  import("@/pages/JoinQuantExport").then((m) => ({ default: m.JoinQuantExport })),
 );
 const DataSources = lazy(() =>
   import("@/pages/AsharePlaceholder").then((m) => ({ default: m.DataSources })),
