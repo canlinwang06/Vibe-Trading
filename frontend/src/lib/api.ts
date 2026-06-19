@@ -197,6 +197,42 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  listStrategyTemplates: () => request<StrategyTemplateListResponse>("/api/strategy-lab/templates"),
+  seedStrategySpecs: (body: StrategySpecSeedRequest) =>
+    request<StrategySpecSeedResponse>("/api/strategy-lab/specs/seed", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategySpecs: (params: StrategySpecQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.enabled !== undefined && params.enabled !== null) q.set("enabled", String(params.enabled));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategySpecListResponse>(`/api/strategy-lab/specs${qs ? `?${qs}` : ""}`);
+  },
+  runStrategyBacktestBatch: (body: BacktestBatchRequest) =>
+    request<BacktestBatchResponse>("/api/strategy-lab/backtest-batch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategyBacktestRuns: (params: BacktestRunQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_id) q.set("strategy_id", params.strategy_id);
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<BacktestRunListResponse>(`/api/strategy-lab/backtest-runs${qs ? `?${qs}` : ""}`);
+  },
+  listStrategyBacktestRankings: (params: BacktestRankingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.status) q.set("status", params.status);
+    if (params.min_score !== undefined && params.min_score !== null) q.set("min_score", String(params.min_score));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<BacktestRankingResponse>(`/api/strategy-lab/backtest-rankings${qs ? `?${qs}` : ""}`);
+  },
   listCandidatePool: (params: CandidatePoolQuery = {}) => {
     const q = new URLSearchParams();
     if (params.as_of_date) q.set("as_of_date", params.as_of_date);
@@ -720,6 +756,155 @@ export interface DailyWorkflowRunResponse {
   skipped_step_count: number;
   blocked_step?: string | null;
   steps: DailyWorkflowStepResult[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyTemplate {
+  strategy_type: string;
+  template_name: string;
+  description: string;
+  signal_rules: string[];
+  risk_notes: string[];
+  default_rebalance_freq: string;
+  default_holding_period: number;
+  default_max_position: number;
+  default_max_sector_exposure: number;
+  default_max_total_exposure: number;
+  default_stop_loss: number;
+  default_take_profit: number;
+}
+
+export interface StrategyTemplateListResponse {
+  templates: StrategyTemplate[];
+  template_count: number;
+}
+
+export interface StrategySpecSeedRequest {
+  replace?: boolean;
+}
+
+export interface StrategySpecSeedResponse {
+  status: string;
+  template_count: number;
+  variant_count: number;
+  strategy_specs_written: number;
+  strategy_specs_skipped: number;
+  total_expected_specs: number;
+}
+
+export interface StrategySpecQuery {
+  strategy_type?: string | null;
+  enabled?: boolean | null;
+  limit?: number;
+}
+
+export interface StrategySpec {
+  strategy_id: string;
+  strategy_name: string;
+  market: string;
+  strategy_type: string;
+  params: Record<string, unknown>;
+  rebalance_freq: string;
+  holding_period: number;
+  max_position: number;
+  max_sector_exposure: number;
+  max_total_exposure: number;
+  stop_loss: number;
+  take_profit: number;
+  enabled: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StrategySpecListResponse {
+  strategy_specs: StrategySpec[];
+  spec_count: number;
+}
+
+export interface BacktestBatchRequest {
+  start_date: string;
+  end_date: string;
+  as_of_date?: string | null;
+  strategy_ids?: string[] | null;
+  limit?: number;
+  benchmark?: string;
+}
+
+export interface BacktestRun {
+  run_id: string;
+  strategy_id: string;
+  market: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  universe_id?: string | null;
+  benchmark: string;
+  total_return: number;
+  annual_return: number;
+  max_drawdown: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  win_rate: number;
+  profit_loss_ratio: number;
+  turnover: number;
+  trade_count: number;
+  avg_holding_days: number;
+  excess_return: number;
+  information_ratio: number;
+  status: string;
+  artifacts_path?: string | null;
+  created_at?: string | null;
+}
+
+export interface BacktestBatchResponse {
+  status: string;
+  as_of_date: string;
+  start_date: string;
+  end_date: string;
+  runs_written: number;
+  top_runs: BacktestRun[];
+}
+
+export interface BacktestRunQuery {
+  strategy_id?: string | null;
+  status?: string | null;
+  limit?: number;
+}
+
+export interface BacktestRunListResponse {
+  backtest_runs: BacktestRun[];
+  run_count: number;
+}
+
+export interface BacktestRankingQuery {
+  strategy_type?: string | null;
+  status?: string | null;
+  min_score?: number | null;
+  limit?: number;
+}
+
+export interface BacktestRanking extends BacktestRun {
+  strategy_name: string;
+  sample_days: number;
+  strategy_type: string;
+  params: Record<string, unknown>;
+  rebalance_freq: string;
+  holding_period: number;
+  strategy_score: number;
+  risk_score: number;
+  score_components: Record<string, number>;
+  recommendation: string;
+  reason: string;
+  rank: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface BacktestRankingResponse {
+  rankings: BacktestRanking[];
+  ranking_count: number;
+  scoring_model: Record<string, unknown>;
   research_only: boolean;
   live_trading: boolean;
 }

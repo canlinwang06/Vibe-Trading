@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-28 strategy-lab UI tests"
+npm --prefix "$ROOT/frontend" run test:run -- \
+  src/pages/__tests__/StrategyLab.test.tsx \
+  src/config/__tests__/ashareNavigation.test.ts \
+  src/components/layout/__tests__/Layout.test.tsx \
+  src/pages/__tests__/Home.test.tsx
+
+step "Check strategy-lab UI wiring and guardrails"
+node - "$ROOT" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const root = process.argv[2];
+const page = fs.readFileSync(path.join(root, "frontend/src/pages/StrategyLab.tsx"), "utf8");
+const tests = fs.readFileSync(path.join(root, "frontend/src/pages/__tests__/StrategyLab.test.tsx"), "utf8");
+const api = fs.readFileSync(path.join(root, "frontend/src/lib/api.ts"), "utf8");
+const router = fs.readFileSync(path.join(root, "frontend/src/router.tsx"), "utf8");
+const nav = fs.readFileSync(path.join(root, "frontend/src/config/ashareNavigation.ts"), "utf8");
+
+const required = [
+  ["template API is wired", api.includes("/api/strategy-lab/templates")],
+  ["seed API is wired", api.includes("/api/strategy-lab/specs/seed")],
+  ["spec list API is wired", api.includes("/api/strategy-lab/specs")],
+  ["batch API is wired", api.includes("/api/strategy-lab/backtest-batch")],
+  ["backtest list API is wired", api.includes("/api/strategy-lab/backtest-runs")],
+  ["ranking API is wired", api.includes("/api/strategy-lab/backtest-rankings")],
+  ["typed strategy spec exists", api.includes("StrategySpec")],
+  ["typed backtest run exists", api.includes("BacktestRun")],
+  ["route uses real page", router.includes("@/pages/StrategyLab")],
+  ["route is registered", router.includes("/strategy-lab")],
+  ["sidebar navigation exists", nav.includes("策略实验室")],
+  ["Chinese page title exists", page.includes("策略实验室")],
+  ["load templates action exists", page.includes("加载模板")],
+  ["seed specs action exists", page.includes("生成策略规格")],
+  ["batch backtest action exists", page.includes("运行批量回测")],
+  ["ranking action exists", page.includes("刷新排名")],
+  ["guardrail copy exists", page.includes("研究回测，不下单")],
+  ["batch test exists", tests.includes("runs batch backtests")],
+  ["ranking test exists", tests.includes("refreshes backtest runs and rankings")],
+];
+
+const forbidden = [
+  ["OPENAI_API_KEY must not be used", "OPENAI_API_KEY"],
+  ["JoinQuant browser automation must not be added", "window.open("],
+  ["JoinQuant external URL must not be hardcoded", "joinquant.com"],
+  ["Playwright automation must not be added", "playwright"],
+  ["Selenium automation must not be added", "selenium"],
+  ["strategy UI must not call approval", "approvePlan"],
+  ["strategy UI must not call broker action", "placeOrder"],
+  ["strategy UI must not call live runner", "startLiveRunner"],
+  ["strategy UI must not call live authorization", "authorizeLive"],
+];
+
+const missing = required.filter(([, ok]) => !ok).map(([label]) => label);
+const strategyApiStart = api.indexOf("listStrategyTemplates");
+const strategyApiEnd = api.indexOf("listCandidatePool");
+const strategyTypesStart = api.indexOf("export interface StrategyTemplate");
+const strategyTypesEnd = api.indexOf("export type CandidateIncludedFilter");
+const strategyApi = strategyApiStart >= 0 && strategyApiEnd > strategyApiStart
+  ? api.slice(strategyApiStart, strategyApiEnd)
+  : "";
+const strategyTypes = strategyTypesStart >= 0 && strategyTypesEnd > strategyTypesStart
+  ? api.slice(strategyTypesStart, strategyTypesEnd)
+  : "";
+const scanned = [page, strategyApi, strategyTypes].join("\n");
+const violations = forbidden
+  .filter(([, token]) => scanned.includes(token))
+  .map(([label]) => label);
+
+if (missing.length || violations.length) {
+  if (missing.length) console.error("missing:", missing);
+  if (violations.length) console.error("violations:", violations);
+  process.exit(1);
+}
+NODE
+
+printf "\nPR-28 acceptance passed.\n"
