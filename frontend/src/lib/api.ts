@@ -158,6 +158,28 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  joinQuantImportExecutionReports: (body: JoinQuantExecutionReportImportRequest) =>
+    request<JoinQuantExecutionReportImportResponse>("/api/joinquant/execution-reports/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantListExecutionReports: (params: JoinQuantExecutionReportQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.signal_date) q.set("signal_date", params.signal_date);
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<JoinQuantExecutionReportListResponse>(`/api/joinquant/execution-reports${qs ? `?${qs}` : ""}`);
+  },
+  joinQuantExecutionReportSummary: (params: JoinQuantExecutionReportSummaryQuery) => {
+    const q = new URLSearchParams();
+    q.set("portfolio_id", params.portfolio_id);
+    if (params.signal_date) q.set("signal_date", params.signal_date);
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.tolerance !== undefined) q.set("tolerance", String(params.tolerance));
+    return request<JoinQuantExecutionReportSummary>(`/api/joinquant/execution-reports/summary?${q.toString()}`);
+  },
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -374,6 +396,98 @@ export interface JoinQuantCopyPackageResponse {
   manual_confirmation_required: boolean;
   research_only: boolean;
   live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportImportRequest {
+  portfolio_id: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  replace?: boolean;
+  reports: Record<string, unknown>[];
+}
+
+export interface JoinQuantExecutionReportQuery {
+  portfolio_id?: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  limit?: number;
+}
+
+export interface JoinQuantExecutionReportSummaryQuery {
+  portfolio_id: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  tolerance?: number;
+}
+
+export interface JoinQuantExecutionReport {
+  report_id: string;
+  signal_date: string;
+  trade_date: string;
+  portfolio_id: string;
+  ticker: string;
+  planned_weight: number;
+  executed_weight: number;
+  order_status: string;
+  fill_price?: number | null;
+  fill_amount?: number | null;
+  error_message?: string | null;
+  raw_report?: string;
+  created_at?: string;
+}
+
+export interface JoinQuantExecutionDeviation {
+  ticker: string;
+  planned_weight: number;
+  executed_weight: number;
+  abs_weight_diff: number;
+  order_status: string;
+  matched_signal: boolean;
+  needs_review: boolean;
+}
+
+export interface JoinQuantExecutionReportSummary {
+  status: "ok" | "needs_review" | string;
+  portfolio_id: string;
+  signal_date: string;
+  trade_date: string;
+  report_count: number;
+  signal_count: number;
+  matched_signal_count: number;
+  failed_count: number;
+  unmatched_report_count: number;
+  missing_report_count: number;
+  total_planned_weight: number;
+  total_executed_weight: number;
+  max_abs_weight_diff: number;
+  total_abs_weight_diff: number;
+  tolerance: number;
+  status_counts: Record<string, number>;
+  unmatched_reports: string[];
+  missing_reports: string[];
+  deviations: JoinQuantExecutionDeviation[];
+  action_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportImportResponse {
+  status: string;
+  imported_count: number;
+  portfolio_id: string;
+  signal_date: string;
+  trade_date: string;
+  replace: boolean;
+  reports: JoinQuantExecutionReport[];
+  summary: JoinQuantExecutionReportSummary;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportListResponse {
+  status: string;
+  count: number;
+  reports: JoinQuantExecutionReport[];
 }
 
 // --- Types matching backend API contracts ---
