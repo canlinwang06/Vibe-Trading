@@ -3291,6 +3291,14 @@ register_alpha_routes(app)
 
 
 # ============================================================================
+# A-share data routes (Web UI / local workbench)
+# ============================================================================
+
+from src.api.ashare_routes import register_ashare_routes  # noqa: E402
+register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
