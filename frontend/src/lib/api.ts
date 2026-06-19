@@ -197,6 +197,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  eventReactionsCalculate: (body: EventReactionCalculateRequest) =>
+    request<EventReactionCalculateResponse>("/api/event-reactions/calculate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventReactions: (params: EventReactionQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.cluster_id) q.set("cluster_id", params.cluster_id);
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    if (params.window) q.set("window", params.window);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventReactionListResponse>(`/api/event-reactions${qs ? `?${qs}` : ""}`);
+  },
+  eventReactionSummary: (params: EventReactionSummaryQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_subtype) q.set("event_subtype", params.event_subtype);
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    if (params.window) q.set("window", params.window);
+    const qs = q.toString();
+    return request<EventReactionSummaryResponse>(`/api/event-reactions/summary${qs ? `?${qs}` : ""}`);
+  },
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -660,6 +685,95 @@ export interface DailyWorkflowRunResponse {
   skipped_step_count: number;
   blocked_step?: string | null;
   steps: DailyWorkflowStepResult[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type EventReactionWindow = "T+1" | "T+5" | "T+20" | "T+60";
+export type EventReactionTargetType = "sector" | "stock";
+
+export interface EventReactionCalculateRequest {
+  event_id?: string | null;
+  cluster_id?: string | null;
+  windows?: EventReactionWindow[] | null;
+  target_types?: EventReactionTargetType[] | null;
+  limit?: number;
+  replace?: boolean;
+}
+
+export interface EventReactionCalculateResponse {
+  status: string;
+  requested_targets: number;
+  windows: EventReactionWindow[];
+  target_types: EventReactionTargetType[];
+  reactions_written: number;
+  skipped_existing: number;
+  skipped_insufficient_data: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface EventReactionQuery {
+  event_id?: string | null;
+  cluster_id?: string | null;
+  target_type?: EventReactionTargetType | string | null;
+  target_id?: string | null;
+  window?: EventReactionWindow | string | null;
+  limit?: number;
+}
+
+export interface EventReactionRecord {
+  reaction_id: string;
+  cluster_id: string;
+  event_id: string;
+  target_type: EventReactionTargetType | string;
+  target_id: string;
+  target_name: string;
+  window: EventReactionWindow | string;
+  raw_return: number | null;
+  benchmark_return: number | null;
+  sector_return: number | null;
+  abnormal_return: number | null;
+  max_drawdown: number | null;
+  volume_change: number | null;
+  breadth_change: number | null;
+  calculated_at?: string | null;
+}
+
+export interface EventReactionListResponse {
+  status: string;
+  reactions: EventReactionRecord[];
+  reaction_count: number;
+}
+
+export interface EventReactionSummaryQuery {
+  event_subtype?: string | null;
+  target_type?: EventReactionTargetType | string | null;
+  target_id?: string | null;
+  window?: EventReactionWindow | string | null;
+}
+
+export interface EventReactionSummaryRow {
+  target_type: EventReactionTargetType | string;
+  window: EventReactionWindow | string;
+  reaction_count: number;
+  avg_raw_return: number | null;
+  avg_benchmark_return: number | null;
+  avg_sector_return: number | null;
+  avg_abnormal_return: number | null;
+  avg_max_drawdown: number | null;
+  avg_volume_change: number | null;
+  avg_breadth_change: number | null;
+}
+
+export interface EventReactionSummaryResponse {
+  status: string;
+  event_subtype?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  window: EventReactionWindow | string;
+  summaries: EventReactionSummaryRow[];
+  summary_count: number;
   research_only: boolean;
   live_trading: boolean;
 }

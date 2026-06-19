@@ -4,6 +4,7 @@ import { BarChart3, ClipboardList, FileText, Layers, ListChecks, Radar, ShieldCh
 const WORKFLOW = [
   { title: "事件雷达", desc: "收集热点事件并判断 A 股相关度", to: "/event-radar", icon: Radar },
   { title: "板块雷达", desc: "观察行业和概念板块热度", to: "/sector-radar", icon: Layers },
+  { title: "事件反应", desc: "复盘事件后 T+1/T+5/T+20/T+60 表现", to: "/event-reactions", icon: BarChart3 },
   { title: "候选股票池", desc: "沉淀可复核的沪深 A 股候选标的", to: "/candidate-pool", icon: Target },
   { title: "回测结果", desc: "验收策略收益、回撤和交易成本", to: "/backtest-results", icon: BarChart3 },
   { title: "风控组合", desc: "统一多策略资金分配和目标持仓", to: "/risk-portfolio", icon: ShieldCheck },
