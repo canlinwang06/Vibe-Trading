@@ -20,7 +20,11 @@ agent/.env
 .claude/*
 !.claude/hooks.json
 CLAUDE.md
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.codex/
 learn-claude-code-main/
 agent/sessions/
 agent/runs/
