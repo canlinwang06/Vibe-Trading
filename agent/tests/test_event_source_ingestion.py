@@ -54,12 +54,17 @@ def test_default_event_sources_cover_required_categories(service: EventSourceIng
     assert {
         "gov_policy_cn",
         "csrc_policy_cn",
+        "ndrc_policy_cn",
         "cninfo_announcement",
+        "sse_disclosure",
+        "szse_disclosure",
         "finance_news_manual",
+        "eastmoney_market",
+        "akshare_local",
         "social_hot_manual",
     }.issubset(source_ids)
-    assert {"policy", "announcement", "finance_news", "social_hot"}.issubset(source_types)
-    assert all(source["legal_mode"] in {"public_page", "manual"} for source in sources)
+    assert {"policy", "regulatory", "announcement", "market_data", "finance_news", "social_hot"}.issubset(source_types)
+    assert all(source["legal_mode"] in {"public_page", "manual", "open_data"} for source in sources)
 
 
 def test_ingest_raw_documents_writes_hash_times_and_deduplicates(service: EventSourceIngestionService) -> None:

@@ -46,6 +46,7 @@ export function Layout() {
     "/risk-portfolio": ShieldCheck,
     "/trade-plan": ClipboardList,
     "/joinquant-export": FileText,
+    "/strategy-lifecycle": ListChecks,
     "/daily-workflow": ListChecks,
     "/data-sources": Database,
     "/settings": Settings,

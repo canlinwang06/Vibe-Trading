@@ -320,6 +320,7 @@ class JoinQuantExportService:
         signal_date: str | date | datetime | None = None,
         trade_date: str | date | datetime | None = None,
         replace: bool = False,
+        jq_task_id: str | None = None,
     ) -> dict[str, Any]:
         """Persist JoinQuant execution reports for local review and reconciliation."""
         self.store.initialize()
@@ -399,18 +400,50 @@ class JoinQuantExportService:
             signal_date=primary_signal,
             trade_date=primary_trade,
         )
+        linked_task_id = self._write_summary_to_task(jq_task_id, summary) if jq_task_id else None
         return {
             "status": summary["status"],
             "imported_count": len(normalized),
             "portfolio_id": primary_portfolio,
             "signal_date": primary_signal.isoformat(),
             "trade_date": primary_trade.isoformat(),
+            "jq_task_id": linked_task_id,
             "replace": replace,
             "reports": [self._public_report(row) for row in normalized],
             "summary": summary,
             "research_only": True,
             "live_trading": False,
         }
+
+    def _write_summary_to_task(self, jq_task_id: str | None, summary: dict[str, Any]) -> str | None:
+        clean_task_id = (jq_task_id or "").strip()
+        if not clean_task_id:
+            return None
+        try:
+            from src.joinquant_orchestration.service import JoinQuantTaskError, JoinQuantTaskService
+
+            JoinQuantTaskService(store=self.store).update_task(
+                clean_task_id,
+                status="completed",
+                result_summary={
+                    "source": "joinquant_execution_report_import",
+                    "summary": summary,
+                },
+                evidence=[
+                    {
+                        "type": "joinquant_execution_reports",
+                        "portfolio_id": summary["portfolio_id"],
+                        "signal_date": summary["signal_date"],
+                        "trade_date": summary["trade_date"],
+                        "report_count": summary["report_count"],
+                        "action_required": summary["action_required"],
+                    }
+                ],
+                error_message="聚宽报告需要复盘。" if summary["action_required"] else None,
+            )
+        except JoinQuantTaskError as exc:
+            raise JoinQuantExportError(f"聚宽任务写回失败: {exc}") from exc
+        return clean_task_id
 
     def list_execution_reports(
         self,

@@ -8,6 +8,7 @@ import type {
   JoinQuantExecutionReportSummary,
   JoinQuantPreflightResponse,
   JoinQuantSimulationReadinessReport,
+  JoinQuantTask,
 } from "@/lib/api";
 
 const apiMock = vi.hoisted(() => ({
@@ -17,6 +18,8 @@ const apiMock = vi.hoisted(() => ({
   joinQuantExecutionReportSummary: vi.fn(),
   joinQuantListExecutionReports: vi.fn(),
   joinQuantSimulationReadiness: vi.fn(),
+  joinQuantListTasks: vi.fn(),
+  joinQuantUpdateTask: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -271,6 +274,28 @@ const readinessReport: JoinQuantSimulationReadinessReport = {
   live_trading: false,
 };
 
+const task: JoinQuantTask = {
+  task_id: "jqtask_ai",
+  source_strategy_id: "spec_ai",
+  source_idea_id: "idea_ai",
+  portfolio_id: "cn_a_main",
+  signal_date: "2026-06-23",
+  task_type: "backtest",
+  status: "waiting_confirm",
+  task_package: {
+    package_status: "copy_package_ready",
+    codex_steps: ["确认用户已在浏览器登录聚宽。", "运行回测并等待结果完成。"],
+  },
+  result_summary: {},
+  evidence: [],
+  fallback_instruction: "若聚宽自动化失败，请下载复制包或手动复制 strategy.py 到聚宽研究环境运行。",
+  created_by: "codex",
+  created_at: "2026-06-23T09:30:00",
+  updated_at: "2026-06-23T09:30:00",
+  research_only: true,
+  live_trading: false,
+};
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -289,6 +314,15 @@ describe("JoinQuantExport page", () => {
     apiMock.joinQuantExecutionReportSummary.mockReset();
     apiMock.joinQuantListExecutionReports.mockReset();
     apiMock.joinQuantSimulationReadiness.mockReset();
+    apiMock.joinQuantListTasks.mockReset();
+    apiMock.joinQuantUpdateTask.mockReset();
+    apiMock.joinQuantListTasks.mockResolvedValue({
+      status: "ok",
+      task_count: 0,
+      tasks: [],
+      research_only: true,
+      live_trading: false,
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -299,15 +333,47 @@ describe("JoinQuantExport page", () => {
   it("renders the Chinese JoinQuant copy workspace", () => {
     render(<JoinQuantExport />);
 
-    expect(screen.getByText("聚宽导出")).toBeInTheDocument();
+    expect(screen.getByText("聚宽任务中心")).toBeInTheDocument();
+    expect(screen.getByText("Codex 聚宽任务队列")).toBeInTheDocument();
     expect(screen.getByText("导出参数")).toBeInTheDocument();
     expect(screen.getByText("复制状态")).toBeInTheDocument();
     expect(screen.getByText("执行报告导入")).toBeInTheDocument();
     expect(screen.getByText("模拟盘准备度")).toBeInTheDocument();
     expect(screen.getByLabelText("报告 JSON")).toBeInTheDocument();
+    expect(screen.getByLabelText("关联聚宽任务 ID")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "生成准备度报告" })).toBeInTheDocument();
     expect(screen.getByText("仅导出 approved 信号")).toBeInTheDocument();
     expect(screen.getByText("不登录聚宽，不提交订单")).toBeInTheDocument();
+  });
+
+  it("loads the Codex-facing task queue and updates task status", async () => {
+    apiMock.joinQuantListTasks.mockResolvedValue({
+      status: "ok",
+      task_count: 1,
+      tasks: [task],
+      research_only: true,
+      live_trading: false,
+    });
+    apiMock.joinQuantUpdateTask.mockResolvedValue({
+      status: "ok",
+      task: { ...task, status: "running" },
+      research_only: true,
+      live_trading: false,
+    });
+
+    render(<JoinQuantExport />);
+
+    expect(await screen.findByText("spec_ai")).toBeInTheDocument();
+    expect(screen.getByText("待你确认")).toBeInTheDocument();
+    expect(screen.getByText("确认用户已在浏览器登录聚宽。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "标记执行中" }));
+
+    await waitFor(() => expect(apiMock.joinQuantUpdateTask).toHaveBeenCalledWith(
+      "jqtask_ai",
+      expect.objectContaining({ status: "running" }),
+    ));
+    expect(await screen.findByText("Codex 操作中")).toBeInTheDocument();
   });
 
   it("runs preflight with research drafts allowed by default", async () => {
@@ -498,6 +564,7 @@ describe("JoinQuantExport page", () => {
     render(<JoinQuantExport />);
     fireEvent.change(screen.getByLabelText("报告信号日期"), { target: { value: "2026-06-23" } });
     fireEvent.change(screen.getByLabelText("报告交易日"), { target: { value: "2026-06-24" } });
+    fireEvent.change(screen.getByLabelText("关联聚宽任务 ID"), { target: { value: "jqtask_ai" } });
     fireEvent.click(screen.getByRole("button", { name: "导入报告" }));
 
     await waitFor(() => expect(apiMock.joinQuantImportExecutionReports).toHaveBeenCalledTimes(1));
@@ -506,6 +573,7 @@ describe("JoinQuantExport page", () => {
         portfolio_id: "cn_a_main",
         signal_date: "2026-06-23",
         trade_date: "2026-06-24",
+        jq_task_id: "jqtask_ai",
         replace: false,
         reports: expect.arrayContaining([
           expect.objectContaining({ ticker: "600519.XSHG", order_status: "filled" }),

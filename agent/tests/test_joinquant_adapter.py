@@ -11,6 +11,7 @@ import api_server
 from src.ashare_data.store import AShareDataStore
 from src.joinquant_adapter.mapper.code_mapper import JoinQuantMappingError, map_ticker, unmap_ticker
 from src.joinquant_adapter.service import JoinQuantExportError, JoinQuantExportService
+from src.joinquant_orchestration.service import JoinQuantTaskService
 
 pytest.importorskip("duckdb")
 
@@ -340,6 +341,38 @@ def test_import_execution_reports_maps_joinquant_tickers_and_summarizes(
     assert signals["600519.SH"] == "executed"
     assert signals["000001.SH"] == "executed"
     assert signals["300750.SZ"] == "approved"
+
+
+def test_import_execution_reports_can_write_back_to_joinquant_task(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_signals(store)
+    task_service = JoinQuantTaskService(store=store)
+    task = task_service.create_task(
+        source_strategy_id="ai_sector_momentum_v1",
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+    )
+
+    imported = exporter.import_execution_reports(
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+        trade_date="2026-06-24",
+        jq_task_id=task["task_id"],
+        reports=[
+            {"ticker": "600519.XSHG", "order_status": "filled", "executed_weight": 0.08},
+            {"ticker": "300750.XSHE", "order_status": "held", "executed_weight": 0.07},
+            {"ticker": "000001.XSHG", "order_status": "held", "executed_weight": 0.04},
+        ],
+    )
+    updated_task = task_service.get_task(task["task_id"])
+
+    assert imported["jq_task_id"] == task["task_id"]
+    assert updated_task["status"] == "completed"
+    assert updated_task["result_summary"]["source"] == "joinquant_execution_report_import"
+    assert updated_task["result_summary"]["summary"]["report_count"] == 3
+    assert updated_task["evidence"][0]["type"] == "joinquant_execution_reports"
 
 
 def test_import_execution_reports_can_replace_existing_trade_date(

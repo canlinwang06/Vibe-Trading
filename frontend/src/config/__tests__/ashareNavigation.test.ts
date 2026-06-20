@@ -18,6 +18,7 @@ describe("A-share navigation", () => {
       "/risk-portfolio",
       "/trade-plan",
       "/joinquant-export",
+      "/strategy-lifecycle",
       "/daily-workflow",
       "/data-sources",
       "/settings",

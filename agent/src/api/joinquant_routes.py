@@ -25,6 +25,7 @@ class JoinQuantExecutionReportImportRequest(BaseModel):
     portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
     signal_date: str | None = Field(default=None, min_length=10, max_length=10)
     trade_date: str | None = Field(default=None, min_length=10, max_length=10)
+    jq_task_id: str | None = Field(default=None, max_length=120)
     replace: bool = False
     reports: list[dict[str, Any]] = Field(min_length=1, max_length=500)
 
@@ -119,6 +120,7 @@ def register_joinquant_routes(app: FastAPI, require_local_or_auth: AuthDep | Non
                 portfolio_id=payload.portfolio_id,
                 signal_date=payload.signal_date,
                 trade_date=payload.trade_date,
+                jq_task_id=payload.jq_task_id,
                 replace=payload.replace,
                 reports=payload.reports,
             )

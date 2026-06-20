@@ -47,9 +47,18 @@ class RawDocumentRecord:
 
 
 SOURCE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{2,63}$")
-SOURCE_TYPES = frozenset({"policy", "announcement", "finance_news", "social_hot", "international_news"})
+SOURCE_TYPES = frozenset({
+    "policy",
+    "regulatory",
+    "exchange",
+    "announcement",
+    "market_data",
+    "finance_news",
+    "social_hot",
+    "international_news",
+})
 ENDPOINT_TYPES = frozenset({"rss", "api", "html", "vendor", "local", "manual"})
-LEGAL_MODES = frozenset({"official_api", "rss", "public_page", "licensed_vendor", "manual"})
+LEGAL_MODES = frozenset({"official_api", "rss", "public_page", "licensed_vendor", "manual", "open_data"})
 
 
 DEFAULT_EVENT_SOURCES: tuple[EventSourceRecord, ...] = (
@@ -65,14 +74,47 @@ DEFAULT_EVENT_SOURCES: tuple[EventSourceRecord, ...] = (
         legal_mode="public_page",
     ),
     EventSourceRecord(
+        source_id="ndrc_policy_cn",
+        source_name="国家发改委政策发布",
+        source_type="policy",
+        endpoint_type="html",
+        url_or_route="https://www.ndrc.gov.cn/",
+        fetch_interval_minutes=240,
+        parser="public_page_list",
+        credibility=1.0,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
         source_id="csrc_policy_cn",
         source_name="证监会政策公告",
-        source_type="policy",
+        source_type="regulatory",
         endpoint_type="html",
         url_or_route="https://www.csrc.gov.cn/",
         fetch_interval_minutes=240,
         parser="public_page_list",
         credibility=1.0,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
+        source_id="sse_disclosure",
+        source_name="上交所公告与监管信息",
+        source_type="exchange",
+        endpoint_type="html",
+        url_or_route="https://www.sse.com.cn/disclosure/",
+        fetch_interval_minutes=120,
+        parser="public_page_list",
+        credibility=0.98,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
+        source_id="szse_disclosure",
+        source_name="深交所公告与监管信息",
+        source_type="exchange",
+        endpoint_type="html",
+        url_or_route="https://www.szse.cn/disclosure/",
+        fetch_interval_minutes=120,
+        parser="public_page_list",
+        credibility=0.98,
         legal_mode="public_page",
     ),
     EventSourceRecord(
@@ -87,6 +129,39 @@ DEFAULT_EVENT_SOURCES: tuple[EventSourceRecord, ...] = (
         legal_mode="public_page",
     ),
     EventSourceRecord(
+        source_id="eastmoney_market",
+        source_name="东方财富行情与板块数据",
+        source_type="market_data",
+        endpoint_type="html",
+        url_or_route="https://quote.eastmoney.com/",
+        fetch_interval_minutes=30,
+        parser="public_market_snapshot",
+        credibility=0.82,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
+        source_id="tencent_market",
+        source_name="腾讯行情公开数据",
+        source_type="market_data",
+        endpoint_type="api",
+        url_or_route="https://qt.gtimg.cn/",
+        fetch_interval_minutes=30,
+        parser="public_market_snapshot",
+        credibility=0.8,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
+        source_id="akshare_local",
+        source_name="AKShare 本地公开数据桥",
+        source_type="market_data",
+        endpoint_type="local",
+        url_or_route="akshare://local-python",
+        fetch_interval_minutes=60,
+        parser="akshare_loader",
+        credibility=0.78,
+        legal_mode="open_data",
+    ),
+    EventSourceRecord(
         source_id="finance_news_manual",
         source_name="财经新闻手动导入",
         source_type="finance_news",
@@ -98,6 +173,17 @@ DEFAULT_EVENT_SOURCES: tuple[EventSourceRecord, ...] = (
         legal_mode="manual",
     ),
     EventSourceRecord(
+        source_id="eastmoney_news",
+        source_name="东方财富财经新闻",
+        source_type="finance_news",
+        endpoint_type="html",
+        url_or_route="https://finance.eastmoney.com/",
+        fetch_interval_minutes=90,
+        parser="public_page_list",
+        credibility=0.72,
+        legal_mode="public_page",
+    ),
+    EventSourceRecord(
         source_id="social_hot_manual",
         source_name="公开热榜手动导入",
         source_type="social_hot",
@@ -106,6 +192,17 @@ DEFAULT_EVENT_SOURCES: tuple[EventSourceRecord, ...] = (
         fetch_interval_minutes=120,
         parser="manual_json",
         credibility=0.6,
+        legal_mode="manual",
+    ),
+    EventSourceRecord(
+        source_id="public_social_hot",
+        source_name="公开社交热榜线索",
+        source_type="social_hot",
+        endpoint_type="manual",
+        url_or_route="/api/event-radar/collect/run",
+        fetch_interval_minutes=120,
+        parser="manual_json",
+        credibility=0.45,
         legal_mode="manual",
     ),
 )

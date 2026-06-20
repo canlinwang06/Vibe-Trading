@@ -482,6 +482,74 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         )
         """,
     ),
+    TableSpec(
+        "jq_orchestration_tasks",
+        """
+        CREATE TABLE IF NOT EXISTS jq_orchestration_tasks (
+          task_id VARCHAR PRIMARY KEY,
+          source_strategy_id VARCHAR,
+          source_idea_id VARCHAR,
+          portfolio_id VARCHAR,
+          signal_date DATE,
+          task_type VARCHAR,
+          status VARCHAR,
+          task_package_json TEXT,
+          result_summary_json TEXT,
+          evidence_json TEXT,
+          error_message TEXT,
+          fallback_instruction TEXT,
+          created_by VARCHAR,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "strategy_lifecycle",
+        """
+        CREATE TABLE IF NOT EXISTS strategy_lifecycle (
+          strategy_id VARCHAR PRIMARY KEY,
+          idea_id VARCHAR,
+          strategy_name VARCHAR,
+          theme VARCHAR,
+          lifecycle_state VARCHAR,
+          health_score DOUBLE,
+          recommendation VARCHAR,
+          reason TEXT,
+          first_seen_date DATE,
+          last_review_date DATE,
+          paper_days INTEGER,
+          signal_count INTEGER,
+          backtest_count INTEGER,
+          best_annual_return DOUBLE,
+          worst_max_drawdown DOUBLE,
+          avg_sharpe DOUBLE,
+          win_rate DOUBLE,
+          evidence_json TEXT,
+          research_only BOOLEAN,
+          live_trading BOOLEAN,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "strategy_lifecycle_events",
+        """
+        CREATE TABLE IF NOT EXISTS strategy_lifecycle_events (
+          event_id VARCHAR PRIMARY KEY,
+          strategy_id VARCHAR,
+          event_time TIMESTAMP,
+          from_state VARCHAR,
+          to_state VARCHAR,
+          reason TEXT,
+          evidence_json TEXT,
+          created_by VARCHAR,
+          research_only BOOLEAN,
+          live_trading BOOLEAN
+        )
+        """,
+    ),
 )
 
 PR03_CORE_TABLE_NAMES = tuple(table.name for table in PR03_CORE_TABLES)

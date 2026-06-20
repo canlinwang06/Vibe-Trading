@@ -3297,6 +3297,9 @@ register_alpha_routes(app)
 from src.api.ashare_routes import register_ashare_routes  # noqa: E402
 register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.ashare_dashboard_routes import register_ashare_dashboard_routes  # noqa: E402
+register_ashare_dashboard_routes(app, require_local_or_auth=require_local_or_auth)
+
 
 # ============================================================================
 # Event radar source routes (Web UI / local workbench)
@@ -3325,6 +3328,12 @@ register_portfolio_risk_routes(app, require_local_or_auth=require_local_or_auth)
 
 from src.api.joinquant_routes import register_joinquant_routes  # noqa: E402
 register_joinquant_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.joinquant_task_routes import register_joinquant_task_routes  # noqa: E402
+register_joinquant_task_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.strategy_lifecycle_routes import register_strategy_lifecycle_routes  # noqa: E402
+register_strategy_lifecycle_routes(app, require_local_or_auth=require_local_or_auth)
 
 from src.api.daily_workflow_routes import register_daily_workflow_routes  # noqa: E402
 register_daily_workflow_routes(app, require_local_or_auth=require_local_or_auth)

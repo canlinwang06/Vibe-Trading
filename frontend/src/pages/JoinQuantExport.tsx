@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
   type JoinQuantExportRequest,
   type JoinQuantPreflightResponse,
   type JoinQuantSimulationReadinessReport,
+  type JoinQuantTask,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,7 @@ const DEFAULT_REPORT_JSON = JSON.stringify(
 type LoadingAction = "preflight" | "package" | "copy" | null;
 type ReportAction = "import" | "summary" | null;
 type ReadinessAction = "readiness" | null;
+type TaskAction = "refresh" | "running" | "completed" | "failed" | null;
 
 type CopyState =
   | { status: "idle"; message: string }
@@ -134,6 +136,33 @@ function checkStatusLabel(status: string): string {
   if (status === "warning") return "提醒";
   if (status === "fail") return "阻断";
   return status;
+}
+
+function taskStatusLabel(status: string): string {
+  if (status === "waiting_confirm") return "待你确认";
+  if (status === "running") return "Codex 操作中";
+  if (status === "completed") return "结果已写回";
+  if (status === "failed") return "需要复盘";
+  if (status === "cancelled") return "已取消";
+  if (status === "draft") return "草稿";
+  return status;
+}
+
+function taskStatusClass(status: string): string {
+  if (status === "completed") return "border-success/30 bg-success/5 text-success";
+  if (status === "failed" || status === "cancelled") return "border-destructive/30 bg-destructive/5 text-destructive";
+  if (status === "running") return "border-primary/30 bg-primary/5 text-primary";
+  return "border-warning/30 bg-warning/5 text-warning";
+}
+
+function taskPackageStatus(task: JoinQuantTask): string {
+  const value = task.task_package?.package_status;
+  return typeof value === "string" ? value : "待准备";
+}
+
+function taskCodexSteps(task: JoinQuantTask): string[] {
+  const value = task.task_package?.codex_steps;
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function downloadTextFile(filename: string, content: string, contentType: string) {
@@ -751,6 +780,10 @@ function ReadinessReportPanel({ report }: { report: JoinQuantSimulationReadiness
 }
 
 export function JoinQuantExport() {
+  const [tasks, setTasks] = useState<JoinQuantTask[]>([]);
+  const [taskAction, setTaskAction] = useState<TaskAction>("refresh");
+  const [taskUpdatingId, setTaskUpdatingId] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState("");
   const [portfolioId, setPortfolioId] = useState("cn_a_main");
   const [signalDate, setSignalDate] = useState("");
   const [strategyId, setStrategyId] = useState("");
@@ -767,6 +800,7 @@ export function JoinQuantExport() {
   const [reportPortfolioId, setReportPortfolioId] = useState("cn_a_main");
   const [reportSignalDate, setReportSignalDate] = useState("");
   const [reportTradeDate, setReportTradeDate] = useState("");
+  const [reportTaskId, setReportTaskId] = useState("");
   const [reportTolerance, setReportTolerance] = useState("0.01");
   const [reportReplace, setReportReplace] = useState(false);
   const [reportJson, setReportJson] = useState(DEFAULT_REPORT_JSON);
@@ -792,6 +826,51 @@ export function JoinQuantExport() {
   const operationSeq = useRef(0);
   const reportSeq = useRef(0);
   const readinessSeq = useRef(0);
+
+  async function refreshTasks() {
+    setTaskAction("refresh");
+    setTaskError("");
+    try {
+      const response = await api.joinQuantListTasks({ limit: 20 });
+      setTasks(response.tasks);
+    } catch (err) {
+      setTaskError(errorMessage(err));
+    } finally {
+      setTaskAction(null);
+    }
+  }
+
+  async function updateTaskStatus(task: JoinQuantTask, status: "running" | "completed" | "failed") {
+    setTaskAction(status);
+    setTaskUpdatingId(task.task_id);
+    setTaskError("");
+    try {
+      const response = await api.joinQuantUpdateTask(task.task_id, {
+        status,
+        result_summary: status === "completed"
+          ? {
+              note: "聚宽结果已由 Codex 写回，等待后续复盘指标补充。",
+              updated_from: "joinquant-task-center",
+            }
+          : task.result_summary,
+        error_message: status === "failed" ? "聚宽任务需要人工复盘或重新执行。" : null,
+      });
+      setTasks((current) =>
+        current.some((item) => item.task_id === response.task.task_id)
+          ? current.map((item) => (item.task_id === response.task.task_id ? response.task : item))
+          : [response.task, ...current],
+      );
+    } catch (err) {
+      setTaskError(errorMessage(err));
+    } finally {
+      setTaskAction(null);
+      setTaskUpdatingId(null);
+    }
+  }
+
+  useEffect(() => {
+    void refreshTasks();
+  }, []);
 
   const payload = useMemo<JoinQuantExportRequest>(() => ({
     portfolio_id: portfolioId.trim() || "cn_a_main",
@@ -926,6 +1005,7 @@ export function JoinQuantExport() {
       const query = reportQuery();
       const result = await api.joinQuantImportExecutionReports({
         ...query,
+        jq_task_id: reportTaskId.trim() || null,
         replace: reportReplace,
         reports: rows,
       });
@@ -1008,19 +1088,20 @@ export function JoinQuantExport() {
   const isBusy = loadingAction !== null;
   const reportBusy = reportAction !== null;
   const readinessBusy = readinessAction !== null;
+  const taskBusy = taskAction !== null;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <header className="space-y-3">
         <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-1 text-xs text-muted-foreground">
           <FileCode2 className="h-3.5 w-3.5 text-primary" />
-          复制到聚宽模拟运行
+          Codex 指挥聚宽模拟运行
         </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">聚宽导出</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">聚宽任务中心</h1>
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              将观察股票池生成的研究草案转换为 JoinQuant 兼容策略代码，并保留人工确认与下载兜底。
+              页面负责呈现任务状态和本地兜底材料，具体打开聚宽、复制策略、读取结果由 Codex 按你的指令执行。
             </p>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
@@ -1029,6 +1110,107 @@ export function JoinQuantExport() {
           </div>
         </div>
       </header>
+
+      <section className="rounded-lg border bg-card p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">Codex 聚宽任务队列</h2>
+            </div>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-muted-foreground">
+              从策略卡创建任务后，这里记录待确认、执行中、已写回和需要复盘的状态。你可以让 Codex 继续操作浏览器，也可以用下方复制包手动兜底。
+            </p>
+          </div>
+          <button
+            className="inline-flex w-fit items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={taskBusy}
+            onClick={refreshTasks}
+            type="button"
+          >
+            {taskAction === "refresh" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            刷新任务
+          </button>
+        </div>
+
+        {taskError ? (
+          <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {taskError}
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-4">
+          {tasks.length === 0 && taskAction !== "refresh" ? (
+            <div className="rounded-lg border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+              还没有聚宽任务。可以从“板块及股票分析”的策略卡创建，或直接告诉 Codex 根据某张策略卡创建回测任务。
+            </div>
+          ) : null}
+
+          {tasks.map((task) => {
+            const steps = taskCodexSteps(task).slice(0, 4);
+            const updating = taskUpdatingId === task.task_id;
+            return (
+              <article key={task.task_id} className="rounded-lg border bg-background p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap gap-2">
+                      <span className={cn("rounded-md border px-2.5 py-1 text-xs", taskStatusClass(task.status))}>
+                        {taskStatusLabel(task.status)}
+                      </span>
+                      <span className="rounded-md border bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground">
+                        {task.task_type === "paper_simulation" ? "模拟盘" : "回测"} / {taskPackageStatus(task)}
+                      </span>
+                    </div>
+                    <h3 className="mt-3 text-sm font-semibold">{task.source_strategy_id || task.source_idea_id}</h3>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {task.portfolio_id} / 信号日 {task.signal_date} / {task.fallback_instruction}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="inline-flex h-8 items-center gap-2 rounded-md border bg-card px-3 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={taskBusy || task.status === "running"}
+                      onClick={() => updateTaskStatus(task, "running")}
+                      type="button"
+                    >
+                      {updating && taskAction === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      标记执行中
+                    </button>
+                    <button
+                      className="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={taskBusy || task.status === "completed"}
+                      onClick={() => updateTaskStatus(task, "completed")}
+                      type="button"
+                    >
+                      {updating && taskAction === "completed" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      标记已写回
+                    </button>
+                    <button
+                      className="inline-flex h-8 items-center gap-2 rounded-md border bg-card px-3 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={taskBusy || task.status === "failed"}
+                      onClick={() => updateTaskStatus(task, "failed")}
+                      type="button"
+                    >
+                      {updating && taskAction === "failed" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                      标记复盘
+                    </button>
+                  </div>
+                </div>
+
+                {steps.length > 0 ? (
+                  <div className="mt-4 grid gap-2 text-xs md:grid-cols-2">
+                    {steps.map((step) => (
+                      <div key={step} className="rounded-md border bg-muted/20 p-2 leading-5 text-muted-foreground">
+                        {step}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="rounded-lg border bg-card p-5">
@@ -1270,6 +1452,16 @@ export function JoinQuantExport() {
                   type="date"
                   value={reportTradeDate}
                   onChange={(event) => setReportTradeDate(event.target.value)}
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm sm:col-span-2">
+                <span className="text-xs font-medium text-muted-foreground">关联聚宽任务 ID</span>
+                <input
+                  className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+                  placeholder="可选；填入 jqtask_xxx 后会写回任务中心"
+                  value={reportTaskId}
+                  onChange={(event) => setReportTaskId(event.target.value)}
                 />
               </label>
             </div>

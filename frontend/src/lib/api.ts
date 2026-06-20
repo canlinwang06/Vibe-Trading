@@ -143,6 +143,30 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getDailyIntelligence: (params: DailyIntelligenceQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<DailyIntelligenceResponse>(`/api/ashare-dashboard/daily-intelligence${qs ? `?${qs}` : ""}`);
+  },
+  getSectorStockDashboard: (params: SectorStockDashboardQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.theme) q.set("theme", params.theme);
+    const qs = q.toString();
+    return request<SectorStockDashboardResponse>(`/api/ashare-dashboard/sector-stock-analysis${qs ? `?${qs}` : ""}`);
+  },
+  listEventRecords: (params: EventRecordQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_type) q.set("event_type", params.event_type);
+    if (params.event_subtype) q.set("event_subtype", params.event_subtype);
+    if (params.from_date) q.set("from_date", params.from_date);
+    if (params.to_date) q.set("to_date", params.to_date);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRecordListResponse>(`/api/event-records${qs ? `?${qs}` : ""}`);
+  },
   listEventSources: (params: EventSourceQuery = {}) => {
     const q = new URLSearchParams();
     if (params.enabled_only !== undefined) q.set("enabled_only", String(params.enabled_only));
@@ -270,6 +294,34 @@ export const api = {
     if (params.max_signal_delay_days !== undefined) q.set("max_signal_delay_days", String(params.max_signal_delay_days));
     return request<JoinQuantSimulationReadinessReport>(`/api/joinquant/simulation-readiness?${q.toString()}`);
   },
+  joinQuantCreateTask: (body: JoinQuantTaskCreateRequest) =>
+    request<JoinQuantTaskResponse>("/api/joinquant/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantListTasks: (params: JoinQuantTaskQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<JoinQuantTaskListResponse>(`/api/joinquant/tasks${qs ? `?${qs}` : ""}`);
+  },
+  joinQuantUpdateTask: (taskId: string, body: JoinQuantTaskUpdateRequest) =>
+    request<JoinQuantTaskResponse>(`/api/joinquant/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getStrategyLifecycleOverview: (params: StrategyLifecycleQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.refresh !== undefined) q.set("refresh", String(params.refresh));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategyLifecycleOverviewResponse>(`/api/strategy-lifecycle/overview${qs ? `?${qs}` : ""}`);
+  },
+  refreshStrategyLifecycle: () =>
+    request<StrategyLifecycleRefreshResponse>("/api/strategy-lifecycle/refresh", {
+      method: "POST",
+    }),
   dailyWorkflowRun: (body: DailyWorkflowRunRequest) =>
     request<DailyWorkflowRunResponse>("/api/daily-workflow/run", {
       method: "POST",
@@ -545,6 +597,136 @@ export interface UpdateDataSourceSettingsRequest {
   clear_tushare_token?: boolean;
 }
 
+export interface DailyIntelligenceQuery {
+  as_of_date?: string | null;
+}
+
+export interface DashboardMetric {
+  label: string;
+  value: string;
+  delta?: string;
+  tone?: "success" | "warning" | "danger" | "info" | string;
+}
+
+export interface DashboardSectorHeat {
+  sector_id: string;
+  sector_name: string;
+  event_heat: number;
+  market_confirm: number;
+  breadth_score: number;
+  flow_score: number;
+  persistence_score: number;
+  crowding_risk: number;
+  sector_heat_score: number;
+  cycle_stage: string;
+  created_at?: string | null;
+}
+
+export interface DashboardEventTimelineItem {
+  event_id: string;
+  theme?: string | null;
+  summary: string;
+  time?: string | null;
+  relevance: number;
+  certainty: number;
+  source_name: string;
+  source_type: string;
+  source_url?: string | null;
+  verification_status: string;
+}
+
+export interface DashboardSourceFreshness {
+  source_type: string;
+  source_name: string;
+  enabled_count: number;
+  source_count: number;
+  fetched_count: number;
+  credibility: number;
+  status: string;
+}
+
+export interface DailyIntelligenceResponse {
+  status: string;
+  as_of_date: string;
+  data_mode: "local" | "sample" | string;
+  headline: string;
+  market_temperature: {
+    score: number;
+    label: string;
+    heat: number;
+    event_relevance: number;
+  };
+  market_metrics: DashboardMetric[];
+  sector_heat: DashboardSectorHeat[];
+  event_timeline: DashboardEventTimelineItem[];
+  source_freshness: DashboardSourceFreshness[];
+  codex_actions: string[];
+  warnings: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface EventRecordQuery {
+  limit?: number;
+  event_type?: string | null;
+  event_subtype?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRecordImpactSummary {
+  window: string;
+  status: string;
+  reaction_count: number;
+  sector_count: number;
+  stock_count: number;
+  avg_raw_return: number | null;
+  avg_abnormal_return: number | null;
+  worst_max_drawdown: number | null;
+  calculated_at?: string | null;
+}
+
+export interface EventRecord {
+  event_id: string;
+  cluster_id: string;
+  doc_id?: string | null;
+  event_time?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  knowable_time?: string | null;
+  tradable_time?: string | null;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  certainty: number;
+  a_share_relevance_score: number;
+  source_name?: string | null;
+  source_type?: string | null;
+  source_url?: string | null;
+  local_document_ref?: string | null;
+  evidence: Record<string, unknown>;
+  related_sectors: EventSectorMapping[];
+  related_stocks: EventStockMapping[];
+  impact: Record<string, EventRecordImpactSummary>;
+  impact_t1: EventRecordImpactSummary;
+  impact_t5: EventRecordImpactSummary;
+  impact_t20: EventRecordImpactSummary;
+  impact_t60: EventRecordImpactSummary;
+}
+
+export interface EventRecordListResponse {
+  status: string;
+  records: EventRecord[];
+  record_count: number;
+  impact_windows: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
 export interface JoinQuantExportRequest {
   portfolio_id: string;
   signal_date?: string | null;
@@ -632,6 +814,7 @@ export interface JoinQuantExecutionReportImportRequest {
   portfolio_id: string;
   signal_date?: string | null;
   trade_date?: string | null;
+  jq_task_id?: string | null;
   replace?: boolean;
   reports: Record<string, unknown>[];
 }
@@ -707,6 +890,7 @@ export interface JoinQuantExecutionReportImportResponse {
   portfolio_id: string;
   signal_date: string;
   trade_date: string;
+  jq_task_id?: string | null;
   replace: boolean;
   reports: JoinQuantExecutionReport[];
   summary: JoinQuantExecutionReportSummary;
@@ -800,6 +984,62 @@ export interface JoinQuantSimulationReadinessReport {
   checks: JoinQuantReadinessCheck[];
   findings: string[];
   daily_summaries: JoinQuantReadinessDailySummary[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskCreateRequest {
+  source_strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id?: string;
+  signal_date?: string | null;
+  task_type?: "backtest" | "paper_simulation" | string;
+  created_by?: string;
+}
+
+export interface JoinQuantTaskUpdateRequest {
+  status?: "draft" | "waiting_confirm" | "running" | "completed" | "failed" | "cancelled" | string;
+  result_summary?: Record<string, unknown> | null;
+  evidence?: Record<string, unknown>[] | null;
+  error_message?: string | null;
+}
+
+export interface JoinQuantTaskQuery {
+  status?: string | null;
+  limit?: number;
+}
+
+export interface JoinQuantTask {
+  task_id: string;
+  source_strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id: string;
+  signal_date: string;
+  task_type: string;
+  status: string;
+  task_package: Record<string, unknown>;
+  result_summary: Record<string, unknown>;
+  evidence: Record<string, unknown>[];
+  error_message?: string | null;
+  fallback_instruction: string;
+  created_by: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskResponse {
+  status: string;
+  task: JoinQuantTask;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskListResponse {
+  status: string;
+  task_count: number;
+  tasks: JoinQuantTask[];
   research_only: boolean;
   live_trading: boolean;
 }
@@ -1108,6 +1348,125 @@ export interface StrategyIdeaSaveSpecResponse {
   status: string;
   idea_id: string;
   strategy_spec: StrategySpec;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface SectorStockDashboardQuery {
+  as_of_date?: string | null;
+  theme?: string | null;
+}
+
+export interface SectorStockDashboardCandidateMatrix {
+  ticker: string;
+  ticker_name: string;
+  sector_name: string;
+  leader_score: number;
+  order_score: number;
+  catch_up_score: number;
+  crowding_flag: boolean;
+}
+
+export interface SectorStockDashboardResponse {
+  status: string;
+  as_of_date: string;
+  theme: string;
+  data_mode: "local" | "sample" | string;
+  sector_score: {
+    theme: string;
+    score: number;
+    summary: string;
+    badges: string[];
+  };
+  sector_rankings: DashboardSectorHeat[];
+  candidate_matrix: SectorStockDashboardCandidateMatrix[];
+  candidate_pool: CandidateRecord[];
+  strategy_ideas: StrategyIdea[];
+  codex_actions: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleQuery {
+  refresh?: boolean;
+  limit?: number;
+}
+
+export interface StrategyLifecycleFunnelItem {
+  state: string;
+  label: string;
+  count: number;
+}
+
+export interface StrategyLifecycleHealthBucket {
+  label: string;
+  count: number;
+  min_score: number;
+  max_score: number;
+}
+
+export interface StrategyLifecycleStrategy {
+  strategy_id: string;
+  idea_id?: string | null;
+  strategy_name: string;
+  theme: string;
+  lifecycle_state: string;
+  health_score: number;
+  recommendation: string;
+  reason: string;
+  first_seen_date?: string | null;
+  last_review_date?: string | null;
+  paper_days: number;
+  signal_count: number;
+  backtest_count: number;
+  best_annual_return?: number | null;
+  worst_max_drawdown?: number | null;
+  avg_sharpe?: number | null;
+  win_rate?: number | null;
+  evidence: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StrategyLifecycleEvent {
+  event_id: string;
+  strategy_id: string;
+  event_time?: string | null;
+  from_state?: string | null;
+  to_state: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  created_by: string;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleRecommendation {
+  strategy_id: string;
+  strategy_name: string;
+  recommendation: string;
+  reason: string;
+  health_score: number;
+}
+
+export interface StrategyLifecycleOverviewResponse {
+  status: string;
+  data_mode: "local" | "sample" | string;
+  funnel: StrategyLifecycleFunnelItem[];
+  health_distribution: StrategyLifecycleHealthBucket[];
+  strategies: StrategyLifecycleStrategy[];
+  events: StrategyLifecycleEvent[];
+  recommendations: StrategyLifecycleRecommendation[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleRefreshResponse {
+  status: string;
+  strategy_count: number;
+  strategies: StrategyLifecycleStrategy[];
   research_only: boolean;
   live_trading: boolean;
 }
