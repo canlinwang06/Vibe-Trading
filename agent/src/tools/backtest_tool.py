@@ -9,6 +9,7 @@ from backtest.loaders.registry import VALID_SOURCES
 from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.core.runner import Runner
+from src.market_policy import MarketPolicyError, validate_backtest_config
 from src.tools.path_utils import safe_run_dir
 
 
@@ -35,6 +36,11 @@ def run_backtest(run_dir: str) -> str:
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         return json.dumps({"status": "error", "error": f"config.json parse error: {e}"}, ensure_ascii=False)
+
+    try:
+        config = validate_backtest_config(config)
+    except MarketPolicyError as exc:
+        return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
 
     if "source" not in config:
         return json.dumps({"status": "error", "error": "config.json missing 'source' field (tushare/okx/yfinance)"}, ensure_ascii=False)

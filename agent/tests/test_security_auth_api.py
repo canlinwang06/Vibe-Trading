@@ -27,6 +27,7 @@ def clear_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     monkeypatch.delenv("VIBE_TRADING_TRUST_DOCKER_LOOPBACK", raising=False)
     monkeypatch.delenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", raising=False)
+    monkeypatch.setenv("CN_A_ONLY", "0")
     monkeypatch.setattr(api_server, "_API_KEY", "")
 
 

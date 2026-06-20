@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-27 candidate-pool UI tests"
+npm --prefix "$ROOT/frontend" run test:run -- \
+  src/pages/__tests__/CandidatePool.test.tsx \
+  src/config/__tests__/ashareNavigation.test.ts \
+  src/components/layout/__tests__/Layout.test.tsx \
+  src/pages/__tests__/Home.test.tsx
+
+step "Check candidate-pool UI wiring and guardrails"
+node - "$ROOT" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const root = process.argv[2];
+const page = fs.readFileSync(path.join(root, "frontend/src/pages/CandidatePool.tsx"), "utf8");
+const tests = fs.readFileSync(path.join(root, "frontend/src/pages/__tests__/CandidatePool.test.tsx"), "utf8");
+const api = fs.readFileSync(path.join(root, "frontend/src/lib/api.ts"), "utf8");
+const router = fs.readFileSync(path.join(root, "frontend/src/router.tsx"), "utf8");
+const nav = fs.readFileSync(path.join(root, "frontend/src/config/ashareNavigation.ts"), "utf8");
+
+const required = [
+  ["list API is wired", api.includes("/api/candidate-pool")],
+  ["build API is wired", api.includes("/api/candidate-pool/build")],
+  ["manual add API is wired", api.includes("/api/candidate-pool/user-add")],
+  ["include API is wired", api.includes("/api/candidate-pool/include")],
+  ["exclude API is wired", api.includes("/api/candidate-pool/exclude")],
+  ["typed candidate record exists", api.includes("CandidateRecord")],
+  ["route uses real page", router.includes("@/pages/CandidatePool")],
+  ["route is registered", router.includes("/candidate-pool")],
+  ["sidebar navigation exists", nav.includes("候选股票池")],
+  ["Chinese page title exists", page.includes("候选股票池")],
+  ["build action exists", page.includes("生成候选池")],
+  ["manual add action exists", page.includes("加入候选池")],
+  ["include action exists", page.includes("纳入")],
+  ["exclude action exists", page.includes("排除")],
+  ["guardrail copy exists", page.includes("不生成交易信号")],
+  ["manual add test exists", tests.includes("adds a manual candidate")],
+  ["decision test exists", tests.includes("excludes and includes candidates")],
+];
+
+const forbidden = [
+  ["OPENAI_API_KEY must not be used", "OPENAI_API_KEY"],
+  ["JoinQuant browser automation must not be added", "window.open("],
+  ["JoinQuant external URL must not be hardcoded", "joinquant.com"],
+  ["Playwright automation must not be added", "playwright"],
+  ["Selenium automation must not be added", "selenium"],
+  ["candidate UI must not call approval", "approvePlan"],
+  ["candidate UI must not call broker action", "placeOrder"],
+  ["candidate UI must not call live runner", "startLiveRunner"],
+  ["candidate UI must not call live authorization", "authorizeLive"],
+];
+
+const missing = required.filter(([, ok]) => !ok).map(([label]) => label);
+const candidateApiStart = api.indexOf("listCandidatePool");
+const candidateApiEnd = api.indexOf("eventReactionsCalculate");
+const candidateTypesStart = api.indexOf("export type CandidateIncludedFilter");
+const candidateTypesEnd = api.indexOf("export type EventReactionWindow");
+const candidateApi = candidateApiStart >= 0 && candidateApiEnd > candidateApiStart
+  ? api.slice(candidateApiStart, candidateApiEnd)
+  : "";
+const candidateTypes = candidateTypesStart >= 0 && candidateTypesEnd > candidateTypesStart
+  ? api.slice(candidateTypesStart, candidateTypesEnd)
+  : "";
+const scanned = [page, candidateApi, candidateTypes].join("\n");
+const violations = forbidden
+  .filter(([, token]) => scanned.includes(token))
+  .map(([label]) => label);
+
+if (missing.length || violations.length) {
+  if (missing.length) console.error("missing:", missing);
+  if (violations.length) console.error("violations:", violations);
+  process.exit(1);
+}
+NODE
+
+printf "\nPR-27 acceptance passed.\n"

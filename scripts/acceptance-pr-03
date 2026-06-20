@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr03-ashare-store.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "PR-03 acceptance failed: %s\n" "$1" >&2
+  exit 1
+}
+
+step "Run PR-03 data store tests"
+PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_ashare_data_store.py" -q
+
+step "Initialize the A-share store twice"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" "$ROOT/scripts/init-ashare-store" --json >"$TMP_DIR/first.json"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" "$ROOT/scripts/init-ashare-store" --json >"$TMP_DIR/second.json"
+
+step "Check initialized schema metadata"
+PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - "$TMP_DIR/second.json" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from src.ashare_data.schema import PR03_CORE_TABLE_NAMES
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected = list(PR03_CORE_TABLE_NAMES)
+if payload.get("tables") != expected:
+    raise SystemExit(f"unexpected tables: {payload.get('tables')}")
+if payload.get("table_count") != len(expected):
+    raise SystemExit(f"unexpected table_count: {payload.get('table_count')}")
+if not Path(payload["database_path"]).exists():
+    raise SystemExit("DuckDB database file was not created")
+if not Path(payload["parquet_dir"]).is_dir():
+    raise SystemExit("Parquet directory was not created")
+PY
+
+printf "\nPR-03 acceptance passed.\n"

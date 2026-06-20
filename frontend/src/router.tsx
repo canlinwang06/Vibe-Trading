@@ -22,11 +22,53 @@ const Correlation = lazy(() =>
 const AlphaZoo = lazy(() =>
   import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
 );
+const EventRadar = lazy(() =>
+  import("@/pages/EventRadar").then((m) => ({ default: m.EventRadar })),
+);
+const EventRecords = lazy(() =>
+  import("@/pages/EventRecords").then((m) => ({ default: m.EventRecords })),
+);
+const SectorStockAnalysis = lazy(() =>
+  import("@/pages/SectorStockAnalysis").then((m) => ({ default: m.SectorStockAnalysis })),
+);
+const SectorRadar = lazy(() =>
+  import("@/pages/SectorRadar").then((m) => ({ default: m.SectorRadar })),
+);
+const EventReactions = lazy(() =>
+  import("@/pages/EventReactions").then((m) => ({ default: m.EventReactions })),
+);
+const CandidatePool = lazy(() =>
+  import("@/pages/CandidatePool").then((m) => ({ default: m.CandidatePool })),
+);
+const StrategyLab = lazy(() =>
+  import("@/pages/StrategyLab").then((m) => ({ default: m.StrategyLab })),
+);
+const BacktestResults = lazy(() =>
+  import("@/pages/BacktestResults").then((m) => ({ default: m.BacktestResults })),
+);
+const RiskPortfolio = lazy(() =>
+  import("@/pages/RiskPortfolio").then((m) => ({ default: m.RiskPortfolio })),
+);
+const TradePlan = lazy(() =>
+  import("@/pages/TradePlan").then((m) => ({ default: m.TradePlan })),
+);
+const JoinQuantExport = lazy(() =>
+  import("@/pages/JoinQuantExport").then((m) => ({ default: m.JoinQuantExport })),
+);
+const StrategyLifecycle = lazy(() =>
+  import("@/pages/StrategyLifecycle").then((m) => ({ default: m.StrategyLifecycle })),
+);
+const DailyWorkflow = lazy(() =>
+  import("@/pages/DailyWorkflow").then((m) => ({ default: m.DailyWorkflow })),
+);
+const DataSources = lazy(() =>
+  import("@/pages/DataSources").then((m) => ({ default: m.DataSources })),
+);
 
 function PageLoader() {
   return (
     <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
-      Loading…
+      正在加载…
     </div>
   );
 }
@@ -44,6 +86,20 @@ export const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: "/", element: wrap(Home) },
+      { path: "/event-records", element: wrap(EventRecords) },
+      { path: "/sector-stock-analysis", element: wrap(SectorStockAnalysis) },
+      { path: "/event-radar", element: wrap(EventRadar) },
+      { path: "/sector-radar", element: wrap(SectorRadar) },
+      { path: "/event-reactions", element: wrap(EventReactions) },
+      { path: "/candidate-pool", element: wrap(CandidatePool) },
+      { path: "/strategy-lab", element: wrap(StrategyLab) },
+      { path: "/backtest-results", element: wrap(BacktestResults) },
+      { path: "/risk-portfolio", element: wrap(RiskPortfolio) },
+      { path: "/trade-plan", element: wrap(TradePlan) },
+      { path: "/joinquant-export", element: wrap(JoinQuantExport) },
+      { path: "/strategy-lifecycle", element: wrap(StrategyLifecycle) },
+      { path: "/daily-workflow", element: wrap(DailyWorkflow) },
+      { path: "/data-sources", element: wrap(DataSources) },
       { path: "/agent", element: wrap(Agent) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/settings", element: wrap(Settings) },

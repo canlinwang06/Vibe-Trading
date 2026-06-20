@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr14-draft-signals.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-14 draft execution-signal tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_portfolio_risk.py" -q
+
+step "Check portfolio-risk signal API routes are mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/portfolio-risk/generate-signals",
+    "/api/portfolio-risk/signals",
+    "/api/portfolio-risk/approve-plan",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing portfolio-risk signal API routes: {missing}")
+PY
+
+printf "\nPR-14 acceptance passed.\n"

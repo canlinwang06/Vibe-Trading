@@ -20,7 +20,11 @@ agent/.env
 .claude/*
 !.claude/hooks.json
 CLAUDE.md
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.codex/
 learn-claude-code-main/
 agent/sessions/
 agent/runs/
@@ -52,6 +56,12 @@ data/backup/
 
 # Internal docs (plans, specs)
 docs/
+!docs/
+!docs/pr-plans/
+!docs/pr-plans/2026-06-21-codex-orchestrated-strategy-lifecycle-pr-plan.md
+!docs/superpowers/
+!docs/superpowers/specs/
+!docs/superpowers/specs/2026-06-21-codex-command-presentation-layer-design.md
 !wiki/docs/
 !wiki/docs/**
 docs/screenshots/agent-run.png

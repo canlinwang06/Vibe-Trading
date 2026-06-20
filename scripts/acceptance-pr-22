@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-22 daily workflow tests"
+"$ROOT/.venv/bin/python" -m pytest "$ROOT/agent/tests/test_daily_workflow.py" -q
+
+step "Check daily workflow wiring and guardrails"
+python3 - "$ROOT" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+service = (root / "agent/src/daily_workflow/service.py").read_text(encoding="utf-8")
+routes = (root / "agent/src/api/daily_workflow_routes.py").read_text(encoding="utf-8")
+api_server = (root / "agent/api_server.py").read_text(encoding="utf-8")
+tests = (root / "agent/tests/test_daily_workflow.py").read_text(encoding="utf-8")
+
+required = [
+    ("workflow route is registered", "register_daily_workflow_routes" in api_server),
+    ("workflow endpoint exists", '"/api/daily-workflow/run"' in routes),
+    ("allowed steps are explicit", "ALLOWED_WORKFLOW_STEPS" in service),
+    ("dry-run mode exists", '"status": "dry_run"' in service),
+    ("draft signals are generated only as drafts", "generate_draft_signals" in service),
+    ("research guardrail is returned", '"research_only": True' in service),
+    ("live trading is disabled", '"live_trading": False' in service),
+    ("full-chain acceptance coverage exists", "runs_full_local_research_chain" in tests),
+    ("blocked prerequisite coverage exists", "blocks_when_prerequisites_are_missing" in tests),
+]
+forbidden = [
+    ("OPENAI_API_KEY must not be used", "OPENAI_API_KEY"),
+    ("broker or JoinQuant URL automation must not be added", "joinquant.com"),
+    ("browser automation must not be added", "window.open("),
+    ("Playwright automation must not be added", "playwright"),
+    ("Selenium automation must not be added", "selenium"),
+    ("workflow must not approve plans", "approve_plan("),
+    ("workflow must not export order packages", "export_copy_package"),
+]
+
+missing = [label for label, ok in required if not ok]
+scanned = "\n".join([service, routes])
+violations = [label for label, token in forbidden if token in scanned]
+
+if missing or violations:
+    if missing:
+        print("missing:", missing, file=sys.stderr)
+    if violations:
+        print("violations:", violations, file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+printf "\nPR-22 acceptance passed.\n"
