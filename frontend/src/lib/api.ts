@@ -790,6 +790,7 @@ export type DailyWorkflowStepName =
   | "map_events"
   | "score_sectors"
   | "build_candidates"
+  | "prepare_joinquant_strategy"
   | "seed_strategy_specs"
   | "run_backtests"
   | "rank_backtests"

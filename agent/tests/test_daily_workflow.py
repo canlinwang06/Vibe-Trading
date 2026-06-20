@@ -131,7 +131,7 @@ def _seed_market_daily(store: AShareDataStore) -> None:
 def test_daily_workflow_dry_run_lists_planned_steps(service: DailyWorkflowService) -> None:
     result = service.run(
         workflow_date="2026-06-22",
-        steps=["collect_documents", "generate_draft_signals"],
+        steps=["collect_documents", "prepare_joinquant_strategy"],
         dry_run=True,
     )
 
@@ -140,10 +140,10 @@ def test_daily_workflow_dry_run_lists_planned_steps(service: DailyWorkflowServic
     assert result["research_only"] is True
     assert result["live_trading"] is False
     assert [step["status"] for step in result["steps"]] == ["planned", "planned"]
-    assert "不会审批或交易" in result["steps"][1]["message"]
+    assert "复制到聚宽" in result["steps"][1]["message"]
 
 
-def test_daily_workflow_runs_full_local_research_chain(
+def test_daily_workflow_runs_default_joinquant_research_chain(
     service: DailyWorkflowService,
     store: AShareDataStore,
 ) -> None:
@@ -163,7 +163,7 @@ def test_daily_workflow_runs_full_local_research_chain(
     steps = {step["name"]: step for step in result["steps"]}
     assert result["status"] == "ok"
     assert result["blocked_step"] is None
-    assert result["completed_step_count"] == 11
+    assert result["completed_step_count"] == 6
     assert result["research_only"] is True
     assert result["live_trading"] is False
     assert steps["collect_documents"]["metrics"]["inserted"] == 1
@@ -171,19 +171,48 @@ def test_daily_workflow_runs_full_local_research_chain(
     assert steps["map_events"]["metrics"]["mapped_events"] >= 1
     assert steps["score_sectors"]["metrics"]["scored_sectors"] >= 1
     assert steps["build_candidates"]["metrics"]["candidate_count"] >= 2
-    assert steps["run_backtests"]["metrics"]["runs_written"] == 4
-    assert steps["rank_backtests"]["metrics"]["ranking_count"] == 4
-    assert steps["allocate_portfolio"]["metrics"]["allocation_count"] >= 1
-    assert steps["generate_draft_signals"]["metrics"]["signals_written"] >= 1
-    assert steps["calculate_event_reactions"]["metrics"]["reactions_written"] >= 1
+    assert "run_backtests" not in steps
+    assert "rank_backtests" not in steps
+    assert "allocate_portfolio" not in steps
+    assert steps["prepare_joinquant_strategy"]["metrics"]["signals_written"] >= 1
 
     with store.connect(read_only=True) as conn:
         statuses = conn.execute(
             "SELECT DISTINCT status FROM execution_signals ORDER BY status"
         ).fetchall()
-        reaction_count = conn.execute("SELECT COUNT(*) FROM event_reactions").fetchone()[0]
     assert statuses == [("draft",)]
-    assert reaction_count >= 1
+
+
+def test_daily_workflow_default_joinquant_path_does_not_require_local_backtests(
+    service: DailyWorkflowService,
+    store: AShareDataStore,
+) -> None:
+    result = service.run(
+        workflow_date="2026-06-20",
+        portfolio_id="cn_a_ai_compute",
+        documents=[_ai_policy_doc()],
+    )
+
+    steps = {step["name"]: step for step in result["steps"]}
+    assert result["status"] == "ok"
+    assert result["workflow_date"] == "2026-06-22"
+    assert "run_backtests" not in steps
+    assert steps["build_candidates"]["metrics"]["candidate_count"] == 3
+    assert steps["prepare_joinquant_strategy"]["metrics"]["signals_written"] == 3
+
+    with store.connect(read_only=True) as conn:
+        run_count = conn.execute("SELECT COUNT(*) FROM backtest_runs").fetchone()[0]
+        signals = conn.execute(
+            """
+            SELECT ticker, status
+            FROM execution_signals
+            WHERE portfolio_id = 'cn_a_ai_compute'
+            ORDER BY target_weight DESC, ticker
+            """
+        ).fetchall()
+    assert run_count == 0
+    assert len(signals) == 3
+    assert {status for _, status in signals} == {"draft"}
 
 
 def test_daily_workflow_blocks_when_prerequisites_are_missing(service: DailyWorkflowService) -> None:

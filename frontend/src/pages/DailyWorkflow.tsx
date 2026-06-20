@@ -27,15 +27,25 @@ const WORKFLOW_STEPS: { name: DailyWorkflowStepName; label: string; hint: string
   { name: "map_events", label: "事件映射", hint: "主题/板块/股票" },
   { name: "score_sectors", label: "板块评分", hint: "热度与确认" },
   { name: "build_candidates", label: "候选股票", hint: "A 股候选池" },
+  { name: "prepare_joinquant_strategy", label: "聚宽策略", hint: "可复制草案" },
   { name: "seed_strategy_specs", label: "策略规格", hint: "本地模板" },
-  { name: "run_backtests", label: "批量回测", hint: "研究验证" },
-  { name: "rank_backtests", label: "回测排名", hint: "策略评分" },
-  { name: "allocate_portfolio", label: "风控组合", hint: "权重草案" },
-  { name: "generate_draft_signals", label: "草稿信号", hint: "人工确认前" },
+  { name: "run_backtests", label: "本地回测", hint: "可选验证" },
+  { name: "rank_backtests", label: "本地排名", hint: "可选评分" },
+  { name: "allocate_portfolio", label: "本地组合", hint: "可选权重" },
+  { name: "generate_draft_signals", label: "本地信号", hint: "旧链路草稿" },
   { name: "calculate_event_reactions", label: "事件反应", hint: "T+1/T+5/T+20/T+60" },
 ];
 
-const DEFAULT_STEPS = WORKFLOW_STEPS.map((step) => step.name);
+const STEP_ORDER = new Map(WORKFLOW_STEPS.map((step, index) => [step.name, index]));
+
+const DEFAULT_STEPS: DailyWorkflowStepName[] = [
+  "collect_documents",
+  "extract_events",
+  "map_events",
+  "score_sectors",
+  "build_candidates",
+  "prepare_joinquant_strategy",
+];
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -68,6 +78,10 @@ function stepLabel(name: string): string {
   return WORKFLOW_STEPS.find((step) => step.name === name)?.label ?? name;
 }
 
+function sortSteps(steps: DailyWorkflowStepName[]): DailyWorkflowStepName[] {
+  return [...steps].sort((a, b) => (STEP_ORDER.get(a) ?? 999) - (STEP_ORDER.get(b) ?? 999));
+}
+
 function statusLabel(status: string): string {
   if (status === "ok") return "完成";
   if (status === "skipped") return "跳过";
@@ -96,7 +110,7 @@ function formatMetricKey(key: string): string {
     runs_written: "回测结果",
     ranking_count: "排名数量",
     allocation_count: "权重草案",
-    signals_written: "草稿信号",
+    signals_written: "聚宽草案",
     source_count: "信息源",
     document_count: "文档",
     status: "状态",
@@ -228,6 +242,9 @@ export function DailyWorkflow() {
 
   const selectedStepCount = selectedSteps.length;
   const allSelected = selectedStepCount === WORKFLOW_STEPS.length;
+  const usesLocalBacktest = selectedSteps.includes("run_backtests") || selectedSteps.includes("rank_backtests");
+  const usesLocalSignalPipeline = selectedSteps.includes("allocate_portfolio") || selectedSteps.includes("generate_draft_signals");
+  const showLocalValidationOptions = usesLocalBacktest || usesLocalSignalPipeline;
 
   const buildPayload = (dryRun: boolean): DailyWorkflowRunRequest => {
     if (!selectedSteps.length) {
@@ -287,7 +304,7 @@ export function DailyWorkflow() {
     setSelectedSteps((current) => (
       current.includes(step)
         ? current.filter((item) => item !== step)
-        : [...current, step].sort((a, b) => DEFAULT_STEPS.indexOf(a) - DEFAULT_STEPS.indexOf(b))
+        : sortSteps([...current, step])
     ));
   };
 
@@ -304,12 +321,12 @@ export function DailyWorkflow() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">每日研究工作流</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              串联事件、板块、候选股票、策略回测、组合风控和草稿信号，输出仍停留在研究与模拟阶段。
+              串联情报采集、板块分析、观察股票池和聚宽策略草案；本地不执行回测，回测与模拟运行在聚宽完成。
             </p>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-md border bg-success/5 px-3 py-2 text-xs text-success">
             <ShieldCheck className="h-3.5 w-3.5" />
-            不审批 / 不导出 / 不实盘
+            不本地回测 / 不审批 / 不实盘
           </div>
         </div>
       </header>
@@ -323,7 +340,7 @@ export function DailyWorkflow() {
             </div>
             <button
               type="button"
-              onClick={() => setSelectedSteps(allSelected ? [] : DEFAULT_STEPS)}
+              onClick={() => setSelectedSteps(allSelected ? [] : WORKFLOW_STEPS.map((step) => step.name))}
               className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {allSelected ? "清空步骤" : "全选步骤"}
@@ -460,44 +477,8 @@ export function DailyWorkflow() {
               </div>
             </fieldset>
 
-            <fieldset className="grid gap-3 border-t pt-4">
-              <legend className="text-xs font-medium text-muted-foreground">回测与信号</legend>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-xs text-muted-foreground">
-                  回测开始
-                  <input
-                    type="date"
-                    value={backtestStartDate}
-                    onChange={(event) => setBacktestStartDate(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs text-muted-foreground">
-                  回测结束
-                  <input
-                    type="date"
-                    value={backtestEndDate}
-                    onChange={(event) => setBacktestEndDate(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs text-muted-foreground">
-                  回测数量
-                  <input
-                    value={backtestLimit}
-                    onChange={(event) => setBacktestLimit(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
-                  />
-                </label>
-                <label className="grid gap-1.5 text-xs text-muted-foreground">
-                  排名数量
-                  <input
-                    value={rankingLimit}
-                    onChange={(event) => setRankingLimit(event.target.value)}
-                    className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
-                  />
-                </label>
-              </div>
+            <fieldset className="grid gap-2 border-t pt-4">
+              <legend className="text-xs font-medium text-muted-foreground">运行控制</legend>
               <div className="grid gap-2 text-sm">
                 <label className="flex items-center gap-2">
                   <input
@@ -515,10 +496,52 @@ export function DailyWorkflow() {
                     onChange={(event) => setReplaceSignals(event.target.checked)}
                     className="h-4 w-4 accent-primary"
                   />
-                  覆盖同日 draft 草稿信号
+                  覆盖同日聚宽策略草案
                 </label>
               </div>
             </fieldset>
+
+            {showLocalValidationOptions ? (
+              <fieldset className="grid gap-3 border-t pt-4">
+                <legend className="text-xs font-medium text-muted-foreground">可选本地验证参数</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">
+                    回测开始
+                    <input
+                      type="date"
+                      value={backtestStartDate}
+                      onChange={(event) => setBacktestStartDate(event.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">
+                    回测结束
+                    <input
+                      type="date"
+                      value={backtestEndDate}
+                      onChange={(event) => setBacktestEndDate(event.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">
+                    回测数量
+                    <input
+                      value={backtestLimit}
+                      onChange={(event) => setBacktestLimit(event.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                    />
+                  </label>
+                  <label className="grid gap-1.5 text-xs text-muted-foreground">
+                    排名数量
+                    <input
+                      value={rankingLimit}
+                      onChange={(event) => setRankingLimit(event.target.value)}
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus:border-primary"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+            ) : null}
 
             {error ? (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -556,7 +579,7 @@ export function DailyWorkflow() {
               <div>
                 <h2 className="text-sm font-semibold">当前任务</h2>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  AI 产业链事件研究：从本地文档进入事件抽取、主题映射、候选股票池、批量回测、组合风控和草稿信号。
+                  AI 产业链事件研究：从本地文档进入事件抽取、板块分析、观察股票池和聚宽策略草案。
                 </p>
               </div>
             </div>

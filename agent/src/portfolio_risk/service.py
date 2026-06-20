@@ -353,6 +353,102 @@ class PortfolioRiskService:
             "live_trading": False,
         }
 
+    def generate_candidate_draft_signals(
+        self,
+        *,
+        portfolio_id: str = "cn_a_main",
+        signal_date: str | date | datetime | None = None,
+        valid_for: str | date | datetime | None = None,
+        current_positions: dict[str, float] | None = None,
+        replace: bool = True,
+        candidate_limit: int = 20,
+        target_total_exposure: float = 0.50,
+        max_single_stock_weight: float = 0.12,
+        max_sector_weight: float = 0.40,
+    ) -> dict[str, Any]:
+        """Create JoinQuant-ready draft signals directly from the observation pool."""
+        self.store.initialize()
+        signal = self._resolve_candidate_signal_date(signal_date)
+        valid = _parse_date(valid_for, field_name="valid_for") or signal + timedelta(days=1)
+        if valid < signal:
+            raise PortfolioRiskError("valid_for 不能早于 signal_date")
+        self._ensure_signal_slot(portfolio_id=portfolio_id, signal_date=signal, replace=replace)
+
+        candidates = self._candidate_signal_rows(as_of=signal, limit=candidate_limit)
+        if not candidates:
+            raise PortfolioRiskError("没有可生成聚宽策略草案的观察股票池，请先生成候选股票池。")
+
+        weights = self._candidate_target_weights(
+            candidates,
+            target_total_exposure=target_total_exposure,
+            max_single_stock_weight=max_single_stock_weight,
+            max_sector_weight=max_sector_weight,
+        )
+        if not any(weight > 0 for weight in weights.values()):
+            raise PortfolioRiskError("观察股票池目标权重为 0，无法生成聚宽策略草案。")
+
+        now = _utc_now()
+        current = current_positions or {}
+        with self.store.connect() as conn:
+            if replace:
+                conn.execute(
+                    """
+                    DELETE FROM execution_signals
+                    WHERE signal_date = ? AND portfolio_id = ? AND status = 'draft'
+                    """,
+                    [signal, portfolio_id],
+                )
+            for candidate in candidates:
+                ticker = candidate["ticker"]
+                target_weight = _round_weight(weights.get(ticker, 0.0))
+                if target_weight <= 0:
+                    continue
+                current_weight = _round_weight(_float(current.get(ticker), 0.0))
+                conn.execute(
+                    """
+                    INSERT INTO execution_signals (
+                      signal_id, signal_date, valid_for, portfolio_id, ticker,
+                      ticker_name, target_weight, current_weight, action,
+                      strategy_sources, theme, reason, risk, status,
+                      created_at, approved_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, NULL)
+                    """,
+                    [
+                        _signal_id(portfolio_id, signal, ticker),
+                        signal,
+                        valid,
+                        portfolio_id,
+                        ticker,
+                        candidate["ticker_name"],
+                        target_weight,
+                        current_weight,
+                        self._signal_action(target_weight, current_weight),
+                        json.dumps(["candidate_pool_joinquant_draft"], ensure_ascii=False),
+                        candidate.get("theme"),
+                        (
+                            f"由观察股票池生成的聚宽模拟策略草案；"
+                            f"股票评分 {candidate['stock_score']:.2f}，板块热度 {candidate['sector_heat_score']:.2f}。"
+                        ),
+                        "研究草案，仅用于复制到聚宽模拟回测；复制前需人工确认风险。",
+                        now,
+                    ],
+                )
+        signals = self.list_signals(portfolio_id=portfolio_id, signal_date=signal, status="draft")
+        return {
+            "status": "draft",
+            "portfolio_id": portfolio_id,
+            "signal_date": signal.isoformat(),
+            "valid_for": valid.isoformat(),
+            "signals_written": len(signals),
+            "execution_signals": signals,
+            "source": "candidate_pool",
+            "requires_human_confirmation": True,
+            "approval_status": "draft",
+            "research_only": True,
+            "live_trading": False,
+        }
+
     def list_signals(
         self,
         *,
@@ -493,6 +589,19 @@ class PortfolioRiskService:
             raise PortfolioRiskError("没有 execution_signals，请先生成草案信号。")
         return latest
 
+    def _resolve_candidate_signal_date(self, signal_date: str | date | datetime | None) -> date:
+        parsed = _parse_date(signal_date, field_name="signal_date")
+        if parsed:
+            return parsed
+        with self.store.connect(read_only=True) as conn:
+            row = conn.execute(
+                "SELECT MAX(as_of_date) FROM candidate_pool WHERE included = true"
+            ).fetchone()
+        latest = _row_date(row[0]) if row and row[0] else None
+        if latest is None:
+            raise PortfolioRiskError("没有观察股票池，请先生成候选股票池。")
+        return latest
+
     def _ensure_signal_slot(self, *, portfolio_id: str, signal_date: date, replace: bool) -> None:
         with self.store.connect(read_only=True) as conn:
             protected = conn.execute(
@@ -561,6 +670,83 @@ class PortfolioRiskService:
             run_id=row.get("run_id") or "",
             artifacts_path=row.get("artifacts_path"),
         )
+
+    def _candidate_signal_rows(self, *, as_of: date, limit: int) -> list[dict[str, Any]]:
+        capped_limit = min(max(int(limit), 1), 200)
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT ticker, ticker_name, sector_id, sector_name, theme,
+                       event_heat_score, sector_heat_score, stock_score,
+                       risk_flag, reason
+                FROM candidate_pool
+                WHERE as_of_date = ? AND included = true
+                ORDER BY stock_score DESC, user_priority DESC, ticker
+                LIMIT ?
+                """,
+                [as_of, capped_limit],
+            ).fetchall()
+        usable = []
+        for row in rows:
+            risk_flag = str(row[8] or "normal")
+            if risk_flag in {"st_or_delisting_risk", "suspended"}:
+                continue
+            usable.append(
+                {
+                    "ticker": row[0],
+                    "ticker_name": row[1],
+                    "sector_id": row[2],
+                    "sector_name": row[3],
+                    "theme": row[4],
+                    "event_heat_score": _float(row[5]),
+                    "sector_heat_score": _float(row[6]),
+                    "stock_score": _float(row[7]),
+                    "risk_flag": risk_flag,
+                    "reason": row[9],
+                }
+            )
+        return usable
+
+    @staticmethod
+    def _candidate_target_weights(
+        candidates: list[dict[str, Any]],
+        *,
+        target_total_exposure: float,
+        max_single_stock_weight: float,
+        max_sector_weight: float,
+    ) -> dict[str, float]:
+        exposure = _clamp(target_total_exposure, 0.05, 1.0)
+        max_single = _clamp(max_single_stock_weight, 0.01, 0.30)
+        max_sector = _clamp(max_sector_weight, 0.05, 0.80)
+        scores = {
+            row["ticker"]: max(_float(row.get("stock_score")), 0.05)
+            for row in candidates
+        }
+        score_total = sum(scores.values())
+        if score_total <= 0:
+            equal = exposure / len(candidates)
+            weights = {row["ticker"]: equal for row in candidates}
+        else:
+            weights = {
+                row["ticker"]: exposure * scores[row["ticker"]] / score_total
+                for row in candidates
+            }
+        capped = {ticker: min(weight, max_single) for ticker, weight in weights.items()}
+        sector_by_ticker = {
+            row["ticker"]: str(row.get("sector_id") or "unknown")
+            for row in candidates
+        }
+        sector_totals: defaultdict[str, float] = defaultdict(float)
+        for ticker, weight in capped.items():
+            sector_totals[sector_by_ticker[ticker]] += weight
+        for sector, total in sector_totals.items():
+            if total <= max_sector or total <= 0:
+                continue
+            scale = max_sector / total
+            for ticker in list(capped):
+                if sector_by_ticker[ticker] == sector:
+                    capped[ticker] *= scale
+        return {ticker: _round_weight(weight) for ticker, weight in capped.items()}
 
     @classmethod
     def _target_exposure(

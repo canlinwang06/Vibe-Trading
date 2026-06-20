@@ -72,6 +72,7 @@ describe("CandidatePool page", () => {
     apiMock.addUserCandidate.mockReset();
     apiMock.includeCandidate.mockReset();
     apiMock.excludeCandidate.mockReset();
+    apiMock.listCandidatePool.mockResolvedValue({ candidate_count: 0, candidates: [] });
   });
 
   it("renders the Chinese candidate-pool workbench", () => {
@@ -84,11 +85,9 @@ describe("CandidatePool page", () => {
     expect(screen.getByRole("button", { name: "加入候选池" })).toBeInTheDocument();
   });
 
-  it("loads candidates through the API", async () => {
+  it("loads the latest candidates through the API on page open", async () => {
     apiMock.listCandidatePool.mockResolvedValueOnce(listResponse);
     render(<CandidatePool />);
-
-    fireEvent.click(screen.getByRole("button", { name: "刷新候选" }));
 
     await waitFor(() => expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1));
     expect(apiMock.listCandidatePool).toHaveBeenCalledWith(expect.objectContaining({
@@ -104,6 +103,7 @@ describe("CandidatePool page", () => {
   it("builds a candidate pool and renders the result", async () => {
     apiMock.buildCandidatePool.mockResolvedValueOnce(buildResponse);
     render(<CandidatePool />);
+    await waitFor(() => expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "生成候选池" }));
 
@@ -119,8 +119,9 @@ describe("CandidatePool page", () => {
 
   it("adds a manual candidate and refreshes the list", async () => {
     apiMock.addUserCandidate.mockResolvedValueOnce({ ...candidate, source: "user_added" });
-    apiMock.listCandidatePool.mockResolvedValueOnce(listResponse);
     render(<CandidatePool />);
+    await waitFor(() => expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1));
+    apiMock.listCandidatePool.mockResolvedValueOnce(listResponse);
 
     fireEvent.click(screen.getByRole("button", { name: "加入候选池" }));
 
@@ -132,7 +133,7 @@ describe("CandidatePool page", () => {
       sector_name: "光模块",
     }));
     expect(await screen.findByText("已加入 中际旭创。")).toBeInTheDocument();
-    expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1);
+    expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(2);
   });
 
   it("excludes and includes candidates from the table", async () => {
@@ -144,7 +145,6 @@ describe("CandidatePool page", () => {
     apiMock.includeCandidate.mockResolvedValueOnce({ ...candidate, included: true });
     render(<CandidatePool />);
 
-    fireEvent.click(screen.getByRole("button", { name: "刷新候选" }));
     expect(await screen.findByText("中际旭创")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: "排除" })[0]);
@@ -161,6 +161,8 @@ describe("CandidatePool page", () => {
 
   it("shows Chinese validation errors without calling the backend", async () => {
     render(<CandidatePool />);
+    await waitFor(() => expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1));
+    apiMock.listCandidatePool.mockClear();
 
     fireEvent.change(screen.getByLabelText("查询上限"), { target: { value: "9999" } });
     fireEvent.click(screen.getByRole("button", { name: "刷新候选" }));
@@ -172,6 +174,7 @@ describe("CandidatePool page", () => {
   it("shows Chinese API errors", async () => {
     apiMock.buildCandidatePool.mockRejectedValueOnce(new Error("没有可生成候选池的板块评分，请先运行板块评分。"));
     render(<CandidatePool />);
+    await waitFor(() => expect(apiMock.listCandidatePool).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "生成候选池" }));
 
