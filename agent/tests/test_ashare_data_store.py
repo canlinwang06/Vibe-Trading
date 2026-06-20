@@ -30,6 +30,7 @@ EXPECTED_PR03_TABLES = (
     "sector_scores",
     "candidate_pool",
     "strategy_specs",
+    "strategy_ideas",
     "backtest_runs",
     "strategy_allocations",
     "execution_signals",
@@ -106,6 +107,9 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     }.issubset(store.table_columns("events"))
     assert {"as_of_date", "ticker", "event_heat_score", "risk_flag", "included"}.issubset(
         store.table_columns("candidate_pool")
+    )
+    assert {"idea_id", "strategy_type", "idea_score", "candidate_tickers_json"}.issubset(
+        store.table_columns("strategy_ideas")
     )
     assert {
         "trade_date",

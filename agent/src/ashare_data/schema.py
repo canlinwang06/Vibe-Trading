@@ -362,6 +362,36 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "strategy_ideas",
+        """
+        CREATE TABLE IF NOT EXISTS strategy_ideas (
+          idea_id VARCHAR PRIMARY KEY,
+          as_of_date DATE,
+          theme VARCHAR,
+          strategy_type VARCHAR,
+          strategy_name VARCHAR,
+          strategy_family VARCHAR,
+          idea_category VARCHAR,
+          risk_preference VARCHAR,
+          holding_period INTEGER,
+          rebalance_freq VARCHAR,
+          idea_score DOUBLE,
+          status VARCHAR,
+          thesis TEXT,
+          candidate_tickers_json TEXT,
+          sector_ids_json TEXT,
+          source_event_ids_json TEXT,
+          entry_rules_json TEXT,
+          exit_rules_json TEXT,
+          risk_controls_json TEXT,
+          params_json TEXT,
+          evidence_json TEXT,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
         "backtest_runs",
         """
         CREATE TABLE IF NOT EXISTS backtest_runs (
