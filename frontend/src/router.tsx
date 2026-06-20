@@ -53,7 +53,7 @@ const DailyWorkflow = lazy(() =>
   import("@/pages/DailyWorkflow").then((m) => ({ default: m.DailyWorkflow })),
 );
 const DataSources = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.DataSources })),
+  import("@/pages/DataSources").then((m) => ({ default: m.DataSources })),
 );
 
 function PageLoader() {
