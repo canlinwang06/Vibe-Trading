@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -221,6 +221,10 @@ export function CandidatePool() {
       setLoading(null);
     }
   };
+
+  useEffect(() => {
+    void refreshList();
+  }, []);
 
   const buildPool = async () => {
     setError(null);

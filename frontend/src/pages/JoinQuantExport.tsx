@@ -407,12 +407,12 @@ function CopyReviewPanel({
           <dd className="mt-1 font-medium">已映射目标 {manifest.target_count} 只</dd>
         </div>
         <div className="rounded-lg border bg-muted/20 p-3">
-          <dt className="text-xs text-muted-foreground">回测区间 / 信号窗口</dt>
+          <dt className="text-xs text-muted-foreground">模拟信号窗口</dt>
           <dd className="mt-1 font-medium">{manifest.signal_date} 至 {manifest.valid_for}</dd>
         </div>
         <div className="rounded-lg border bg-muted/20 p-3">
           <dt className="text-xs text-muted-foreground">目标持仓来源</dt>
-          <dd className="mt-1 font-medium">本地 execution_signals / {manifest.portfolio_id}</dd>
+          <dd className="mt-1 font-medium">观察股票池策略草案 / {manifest.portfolio_id}</dd>
         </div>
       </dl>
 
@@ -755,7 +755,7 @@ export function JoinQuantExport() {
   const [signalDate, setSignalDate] = useState("");
   const [strategyId, setStrategyId] = useState("");
   const [riskNotice, setRiskNotice] = useState(DEFAULT_RISK_NOTICE);
-  const [requireApproved, setRequireApproved] = useState(true);
+  const [requireApproved, setRequireApproved] = useState(false);
   const [preflight, setPreflight] = useState<JoinQuantPreflightResponse | null>(null);
   const [copyPackage, setCopyPackage] = useState<JoinQuantCopyPackageResponse | null>(null);
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null);
@@ -1020,7 +1020,7 @@ export function JoinQuantExport() {
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">聚宽导出</h1>
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              将已审批的本地 A 股模拟信号生成 JoinQuant 兼容策略代码，并保留人工确认与下载兜底。
+              将观察股票池生成的研究草案转换为 JoinQuant 兼容策略代码，并保留人工确认与下载兜底。
             </p>
           </div>
           <div className="inline-flex w-fit items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
@@ -1063,7 +1063,7 @@ export function JoinQuantExport() {
               <span className="text-xs font-medium text-muted-foreground">信号日期</span>
               <input
                 className="rounded-md border bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-                placeholder="留空使用最近 approved 信号"
+                placeholder="留空使用最近研究草案"
                 type="date"
                 value={signalDate}
                 onChange={(event) => {

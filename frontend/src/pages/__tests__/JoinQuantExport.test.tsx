@@ -310,7 +310,7 @@ describe("JoinQuantExport page", () => {
     expect(screen.getByText("不登录聚宽，不提交订单")).toBeInTheDocument();
   });
 
-  it("runs preflight with the approved-signal guard enabled", async () => {
+  it("runs preflight with research drafts allowed by default", async () => {
     apiMock.joinQuantPreflight.mockResolvedValue(okPreflight);
 
     render(<JoinQuantExport />);
@@ -320,7 +320,7 @@ describe("JoinQuantExport page", () => {
     expect(apiMock.joinQuantPreflight).toHaveBeenCalledWith(
       expect.objectContaining({
         portfolio_id: "cn_a_main",
-        require_approved: true,
+        require_approved: false,
       }),
     );
     expect(await screen.findByText("预检查通过")).toBeInTheDocument();
@@ -331,6 +331,7 @@ describe("JoinQuantExport page", () => {
     apiMock.joinQuantPreflight.mockResolvedValue(blockedPreflight);
 
     render(<JoinQuantExport />);
+    fireEvent.click(screen.getByLabelText("仅导出 approved 信号"));
     fireEvent.click(screen.getByRole("button", { name: "预检查" }));
 
     expect(await screen.findByText("预检查阻断")).toBeInTheDocument();

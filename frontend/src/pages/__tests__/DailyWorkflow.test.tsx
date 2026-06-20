@@ -18,6 +18,14 @@ vi.mock("@/lib/api", () => ({
   api: apiMock,
 }));
 
+function checkboxForStep(label: string): HTMLInputElement {
+  const field = screen.getByText(label).closest("label");
+  if (!field) throw new Error(`Missing step label: ${label}`);
+  const checkbox = field.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!checkbox) throw new Error(`Missing checkbox for step: ${label}`);
+  return checkbox;
+}
+
 const dryRunResponse: DailyWorkflowRunResponse = {
   status: "dry_run",
   workflow_date: "2026-06-22",
@@ -54,14 +62,9 @@ const okResponse: DailyWorkflowRunResponse = {
     "map_events",
     "score_sectors",
     "build_candidates",
-    "seed_strategy_specs",
-    "run_backtests",
-    "rank_backtests",
-    "allocate_portfolio",
-    "generate_draft_signals",
-    "calculate_event_reactions",
+    "prepare_joinquant_strategy",
   ],
-  completed_step_count: 11,
+  completed_step_count: 6,
   skipped_step_count: 0,
   blocked_step: null,
   steps: [
@@ -72,16 +75,10 @@ const okResponse: DailyWorkflowRunResponse = {
       metrics: { inserted: 1, duplicates: 0 },
     },
     {
-      name: "generate_draft_signals",
+      name: "prepare_joinquant_strategy",
       status: "ok",
-      message: "已生成 3 条执行信号草案，仍需人工确认。",
+      message: "已生成 3 条聚宽模拟策略草案信号。",
       metrics: { signals_written: 3 },
-    },
-    {
-      name: "calculate_event_reactions",
-      status: "ok",
-      message: "已更新 8 条事件反应研究结果。",
-      metrics: { reactions_written: 8 },
     },
   ],
   research_only: true,
@@ -92,12 +89,12 @@ const blockedResponse: DailyWorkflowRunResponse = {
   ...okResponse,
   status: "blocked",
   completed_step_count: 4,
-  blocked_step: "run_backtests",
+  blocked_step: "build_candidates",
   steps: [
     {
-      name: "run_backtests",
+      name: "build_candidates",
       status: "blocked",
-      message: "候选股票缺少回测行情，请先导入 market_daily。",
+      message: "没有可生成候选池的板块评分，请先运行板块评分。",
       metrics: {},
     },
   ],
@@ -114,9 +111,24 @@ describe("DailyWorkflow page", () => {
     expect(screen.getByText("每日研究工作流")).toBeInTheDocument();
     expect(screen.getByText("运行参数")).toBeInTheDocument();
     expect(screen.getByDisplayValue("AI 产业链事件跟踪")).toBeInTheDocument();
-    expect(screen.getByText("不审批 / 不导出 / 不实盘")).toBeInTheDocument();
+    expect(screen.getByText("不本地回测 / 不审批 / 不实盘")).toBeInTheDocument();
+    expect(checkboxForStep("聚宽策略")).toBeChecked();
+    expect(checkboxForStep("本地回测")).not.toBeChecked();
+    expect(screen.queryByText("回测开始")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "运行工作流" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "试运行" })).toBeInTheDocument();
+  });
+
+  it("shows local backtest parameters only when optional local validation is selected", () => {
+    render(<DailyWorkflow />);
+
+    expect(screen.queryByText("可选本地验证参数")).not.toBeInTheDocument();
+
+    fireEvent.click(checkboxForStep("本地回测"));
+
+    expect(screen.getByText("可选本地验证参数")).toBeInTheDocument();
+    expect(screen.getByText("回测开始")).toBeInTheDocument();
+    expect(screen.getByText("回测结束")).toBeInTheDocument();
   });
 
   it("submits a dry-run request and renders planned steps", async () => {
@@ -130,7 +142,7 @@ describe("DailyWorkflow page", () => {
       dry_run: true,
       portfolio_id: "cn_a_main",
       documents: [expect.objectContaining({ title: "AI 产业链事件跟踪" })],
-      steps: expect.arrayContaining(["collect_documents", "generate_draft_signals"]),
+      steps: expect.arrayContaining(["collect_documents", "prepare_joinquant_strategy"]),
       event_reaction_windows: ["T+1", "T+5", "T+20", "T+60"],
       event_reaction_target_types: ["sector", "stock"],
     }));
@@ -138,17 +150,15 @@ describe("DailyWorkflow page", () => {
     expect(screen.getAllByText("计划中").length).toBeGreaterThan(0);
   });
 
-  it("runs the workflow and displays draft-signal evidence", async () => {
+  it("runs the workflow and displays JoinQuant strategy-draft evidence", async () => {
     apiMock.dailyWorkflowRun.mockResolvedValueOnce(okResponse);
     render(<DailyWorkflow />);
 
     fireEvent.click(screen.getByRole("button", { name: "运行工作流" }));
 
     expect(await screen.findByText("工作流已完成")).toBeInTheDocument();
-    expect(screen.getAllByText("草稿信号").length).toBeGreaterThan(0);
-    expect(screen.getByText("已生成 3 条执行信号草案，仍需人工确认。")).toBeInTheDocument();
-    expect(screen.getAllByText("事件反应").length).toBeGreaterThan(0);
-    expect(screen.getByText("已更新 8 条事件反应研究结果。")).toBeInTheDocument();
+    expect(screen.getAllByText("聚宽策略").length).toBeGreaterThan(0);
+    expect(screen.getByText("已生成 3 条聚宽模拟策略草案信号。")).toBeInTheDocument();
     expect(screen.getAllByText("研究/模拟").length).toBeGreaterThan(0);
   });
 
@@ -159,13 +169,14 @@ describe("DailyWorkflow page", () => {
     fireEvent.click(screen.getByRole("button", { name: "运行工作流" }));
 
     expect(await screen.findByText("工作流已阻断")).toBeInTheDocument();
-    expect(screen.getByText("候选股票缺少回测行情，请先导入 market_daily。")).toBeInTheDocument();
-    expect(screen.getByText("阻断于 批量回测")).toBeInTheDocument();
+    expect(screen.getByText("没有可生成候选池的板块评分，请先运行板块评分。")).toBeInTheDocument();
+    expect(screen.getByText("阻断于 候选股票")).toBeInTheDocument();
   });
 
   it("blocks submission when no workflow step is selected", async () => {
     render(<DailyWorkflow />);
 
+    fireEvent.click(screen.getByRole("button", { name: "全选步骤" }));
     fireEvent.click(screen.getByRole("button", { name: "清空步骤" }));
     fireEvent.click(screen.getByRole("button", { name: "运行工作流" }));
 

@@ -23,10 +23,10 @@ const AlphaZoo = lazy(() =>
   import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
 );
 const EventRadar = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.EventRadar })),
+  import("@/pages/EventRadar").then((m) => ({ default: m.EventRadar })),
 );
 const SectorRadar = lazy(() =>
-  import("@/pages/AsharePlaceholder").then((m) => ({ default: m.SectorRadar })),
+  import("@/pages/SectorRadar").then((m) => ({ default: m.SectorRadar })),
 );
 const EventReactions = lazy(() =>
   import("@/pages/EventReactions").then((m) => ({ default: m.EventReactions })),

@@ -31,6 +31,7 @@ ALLOWED_WORKFLOW_STEPS: tuple[str, ...] = (
     "map_events",
     "score_sectors",
     "build_candidates",
+    "prepare_joinquant_strategy",
     "seed_strategy_specs",
     "run_backtests",
     "rank_backtests",
@@ -39,7 +40,14 @@ ALLOWED_WORKFLOW_STEPS: tuple[str, ...] = (
     "calculate_event_reactions",
 )
 
-DEFAULT_WORKFLOW_STEPS: tuple[str, ...] = ALLOWED_WORKFLOW_STEPS
+DEFAULT_WORKFLOW_STEPS: tuple[str, ...] = (
+    "collect_documents",
+    "extract_events",
+    "map_events",
+    "score_sectors",
+    "build_candidates",
+    "prepare_joinquant_strategy",
+)
 
 WORKFLOW_ERRORS = (
     EventSourceIngestionError,
@@ -164,7 +172,7 @@ class DailyWorkflowService:
 
         return {
             "status": "blocked" if blocked_step else "ok",
-            "workflow_date": as_of.isoformat(),
+            "workflow_date": context["workflow_date"].isoformat(),
             "portfolio_id": context["portfolio_id"],
             "requested_steps": list(selected_steps),
             "completed_step_count": sum(1 for item in results if item["status"] == "ok"),
@@ -210,6 +218,7 @@ class DailyWorkflowService:
             "map_events": self._map_events,
             "score_sectors": self._score_sectors,
             "build_candidates": self._build_candidates,
+            "prepare_joinquant_strategy": self._prepare_joinquant_strategy,
             "seed_strategy_specs": self._seed_strategy_specs,
             "run_backtests": self._run_backtests,
             "rank_backtests": self._rank_backtests,
@@ -240,10 +249,20 @@ class DailyWorkflowService:
         )
 
     def _extract_events(self, context: dict[str, Any]) -> dict[str, Any]:
-        result = EventExtractionService(store=self.store).extract_events(
-            limit=context["event_limit"],
-            min_relevance=context["min_event_relevance"],
-        )
+        try:
+            result = EventExtractionService(store=self.store).extract_events(
+                limit=context["event_limit"],
+                min_relevance=context["min_event_relevance"],
+            )
+        except EventExtractionError:
+            existing = self._existing_event_count()
+            if existing <= 0:
+                raise
+            return _ok_step(
+                "extract_events",
+                f"没有新文档需要抽取，继续使用已有 {existing} 个事件。",
+                {"existing_events": existing},
+            )
         return _ok_step(
             "extract_events",
             f"已抽取 {result['extracted']} 个事件。",
@@ -257,6 +276,7 @@ class DailyWorkflowService:
             min_relevance=context["min_mapping_relevance"],
             limit=context["map_limit"],
         )
+        self._align_workflow_date_to_latest_mapped_event(context)
         return _ok_step(
             "map_events",
             f"已映射 {result['mapped_events']} 个事件。",
@@ -284,6 +304,19 @@ class DailyWorkflowService:
         return _ok_step(
             "build_candidates",
             f"已生成 {result['candidate_count']} 条候选股票。",
+            _summarize_result(result),
+        )
+
+    def _prepare_joinquant_strategy(self, context: dict[str, Any]) -> dict[str, Any]:
+        result = PortfolioRiskService(store=self.store).generate_candidate_draft_signals(
+            portfolio_id=context["portfolio_id"],
+            signal_date=context["workflow_date"],
+            replace=context["replace_signals"],
+            candidate_limit=context["candidate_limit"],
+        )
+        return _ok_step(
+            "prepare_joinquant_strategy",
+            f"已生成 {result['signals_written']} 条聚宽模拟策略草案信号。",
             _summarize_result(result),
         )
 
@@ -365,6 +398,24 @@ class DailyWorkflowService:
             _summarize_result(result),
         )
 
+    def _existing_event_count(self) -> int:
+        with self.store.connect(read_only=True) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
+        return int(row[0] or 0) if row else 0
+
+    def _align_workflow_date_to_latest_mapped_event(self, context: dict[str, Any]) -> None:
+        with self.store.connect(read_only=True) as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(CAST(e.tradable_time AS DATE))
+                FROM event_sector_map m
+                JOIN events e ON e.event_id = m.event_id
+                """
+            ).fetchone()
+        latest = _row_date(row[0]) if row and row[0] else None
+        if latest and latest > context["workflow_date"]:
+            context["workflow_date"] = latest
+
 
 def _resolve_steps(steps: Sequence[str] | None) -> tuple[str, ...]:
     if steps is None:
@@ -396,6 +447,16 @@ def _parse_date(value: str | date | datetime | None, *, field_name: str) -> date
         return date.fromisoformat(text[:10])
     except ValueError as exc:
         raise DailyWorkflowError(f"{field_name} 必须是 YYYY-MM-DD 格式。") from exc
+
+
+def _row_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if value is None:
+        return None
+    return datetime.fromisoformat(str(value)).date()
 
 
 def _clean_portfolio_id(value: str) -> str:
@@ -432,6 +493,7 @@ def _planned_message(step: str) -> str:
         "map_events": "将用本地主题映射把事件关联到板块和股票。",
         "score_sectors": "将基于事件和本地行情生成板块热度评分。",
         "build_candidates": "将基于板块评分生成候选股票池。",
+        "prepare_joinquant_strategy": "将从观察股票池生成可复制到聚宽的模拟策略草案。",
         "seed_strategy_specs": "将确认本地策略规格模板。",
         "run_backtests": "将运行本地批量回测。",
         "rank_backtests": "将对本地回测结果排序评分。",

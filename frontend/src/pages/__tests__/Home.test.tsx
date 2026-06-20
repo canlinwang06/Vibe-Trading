@@ -17,6 +17,7 @@ describe("A-share dashboard home", () => {
     expect(screen.getByText("候选股票池")).toBeInTheDocument();
     expect(screen.getByText("聚宽导出")).toBeInTheDocument();
     expect(screen.getByText("每日工作流")).toBeInTheDocument();
+    expect(screen.getByText("核心研究链路已接入本地事件抽取、板块评分、候选股票、批量回测、风控组合和聚宽复制包。")).toBeInTheDocument();
   });
 
   it("does not render legacy multi-market examples", () => {
@@ -27,5 +28,6 @@ describe("A-share dashboard home", () => {
     );
 
     expect(container.textContent).not.toMatch(/crypto|AAPL|BTC|options|美股|港股|加密货币|期权/i);
+    expect(container.textContent).not.toMatch(/等待 PR|后续模块接入/);
   });
 });
