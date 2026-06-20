@@ -21,6 +21,10 @@ class StrategyIdeaGenerateRequest(BaseModel):
     strategy_types: list[str] | None = Field(default=None, max_length=20)
 
 
+class StrategyIdeaSaveSpecRequest(BaseModel):
+    enabled: bool = True
+
+
 def _service() -> StrategyIdeaService:
     return StrategyIdeaService()
 
@@ -91,3 +95,10 @@ def register_strategy_idea_routes(app: FastAPI, require_local_or_auth: AuthDep |
             return _service().get_idea(idea_id)
         except StrategyIdeaError as exc:
             raise _http_error(exc, status_code=404) from exc
+
+    @app.post("/api/strategy-ideas/{idea_id}/save-spec", dependencies=[Depends(auth)])
+    def save_strategy_idea_as_spec(idea_id: str, payload: StrategyIdeaSaveSpecRequest) -> dict[str, Any]:
+        try:
+            return _service().save_idea_as_strategy_spec(idea_id=idea_id, enabled=payload.enabled)
+        except StrategyIdeaError as exc:
+            raise _http_error(exc) from exc

@@ -38,7 +38,15 @@ function scoreLabel(value: number): string {
   return `${Math.round(value * 10) / 10}`;
 }
 
-function StrategyIdeaCard({ idea }: { idea: StrategyIdea }) {
+function StrategyIdeaCard({
+  idea,
+  saving,
+  onSave,
+}: {
+  idea: StrategyIdea;
+  saving: boolean;
+  onSave: (ideaId: string) => void;
+}) {
   return (
     <article className="rounded-lg border bg-card p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -76,6 +84,21 @@ function StrategyIdeaCard({ idea }: { idea: StrategyIdea }) {
           <p className="mt-2 leading-5">{idea.risk_controls.slice(0, 2).join(" / ")}</p>
         </div>
       </div>
+
+      <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
+          状态：{idea.status === "saved_to_strategy_lab" ? "已进入策略实验室" : "待保存"}
+        </p>
+        <button
+          type="button"
+          disabled={saving || idea.status === "saved_to_strategy_lab"}
+          onClick={() => onSave(idea.idea_id)}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
+          保存到策略实验室
+        </button>
+      </div>
     </article>
   );
 }
@@ -86,6 +109,7 @@ export function SectorStockAnalysis() {
   const [riskPreference, setRiskPreference] = useState("balanced");
   const [ideas, setIdeas] = useState<StrategyIdea[]>([]);
   const [loading, setLoading] = useState<"generate" | "refresh" | null>(null);
+  const [savingIdeaId, setSavingIdeaId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +152,24 @@ export function SectorStockAnalysis() {
       setError(errorMessage(err));
     } finally {
       setLoading(null);
+    }
+  };
+
+  const saveIdea = async (ideaId: string) => {
+    clearFeedback();
+    setSavingIdeaId(ideaId);
+    try {
+      const response = await api.saveStrategyIdeaSpec(ideaId, { enabled: true });
+      setIdeas((current) =>
+        current.map((idea) =>
+          idea.idea_id === ideaId ? { ...idea, status: "saved_to_strategy_lab" } : idea,
+        ),
+      );
+      setNotice(`已保存为策略规格：${response.strategy_spec.strategy_name}`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSavingIdeaId(null);
     }
   };
 
@@ -279,7 +321,14 @@ export function SectorStockAnalysis() {
 
         <div className="mt-5 grid gap-4">
           {ideas.length ? (
-            ideas.map((idea) => <StrategyIdeaCard key={idea.idea_id} idea={idea} />)
+            ideas.map((idea) => (
+              <StrategyIdeaCard
+                key={idea.idea_id}
+                idea={idea}
+                saving={savingIdeaId === idea.idea_id}
+                onSave={saveIdea}
+              />
+            ))
           ) : (
             <div className="rounded-lg border bg-muted/20 p-6 text-sm text-muted-foreground">
               暂无策略卡。生成后会在这里显示策略逻辑、候选股票、规则和风险控制。

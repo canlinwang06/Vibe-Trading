@@ -111,6 +111,26 @@ def test_generate_strategy_ideas_writes_auditable_cards(
     assert "evt_ai_compute_001" in first["source_event_ids"]
 
 
+def test_save_strategy_idea_as_strategy_spec(
+    store: AShareDataStore,
+    service: StrategyIdeaService,
+) -> None:
+    _seed_hotspot_inputs(store)
+    generated = service.generate_ideas(theme="AI算力", as_of_date="2026-06-22", max_ideas=1)
+    idea_id = generated["ideas"][0]["idea_id"]
+
+    saved = service.save_idea_as_strategy_spec(idea_id=idea_id)
+    updated = service.get_idea(idea_id)
+
+    assert saved["status"] == "ok"
+    spec = saved["strategy_spec"]
+    assert spec["strategy_type"] == generated["ideas"][0]["strategy_type"]
+    assert spec["params"]["source_strategy_idea_id"] == idea_id
+    assert spec["params"]["theme"] == "AI算力"
+    assert spec["params"]["candidate_tickers"]
+    assert updated["status"] == "saved_to_strategy_lab"
+
+
 def test_generate_strategy_ideas_returns_chinese_error_without_candidates(service: StrategyIdeaService) -> None:
     with pytest.raises(StrategyIdeaError, match="没有可生成策略想法的候选股票"):
         service.generate_ideas(theme="AI算力", as_of_date="2026-06-22")
@@ -148,3 +168,7 @@ def test_strategy_ideas_api_generate_list_and_detail(client: TestClient) -> None
     assert detail.status_code == 200
     assert detail.json()["idea_id"] == idea_id
     assert detail.json()["research_only"] is True
+
+    save = client.post(f"/api/strategy-ideas/{idea_id}/save-spec", json={"enabled": True})
+    assert save.status_code == 200
+    assert save.json()["strategy_spec"]["params"]["source_strategy_idea_id"] == idea_id

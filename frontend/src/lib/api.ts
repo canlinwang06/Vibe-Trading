@@ -326,6 +326,11 @@ export const api = {
     const qs = q.toString();
     return request<StrategyIdeaListResponse>(`/api/strategy-ideas${qs ? `?${qs}` : ""}`);
   },
+  saveStrategyIdeaSpec: (ideaId: string, body: StrategyIdeaSaveSpecRequest = {}) =>
+    request<StrategyIdeaSaveSpecResponse>(`/api/strategy-ideas/${ideaId}/save-spec`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   allocateRiskPortfolio: (body: PortfolioAllocateRequest) =>
     request<PortfolioAllocationResponse>("/api/portfolio-risk/allocate", {
       method: "POST",
@@ -1091,6 +1096,18 @@ export interface StrategyIdeaListResponse {
   status: string;
   ideas: StrategyIdea[];
   idea_count: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaSaveSpecRequest {
+  enabled?: boolean;
+}
+
+export interface StrategyIdeaSaveSpecResponse {
+  status: string;
+  idea_id: string;
+  strategy_spec: StrategySpec;
   research_only: boolean;
   live_trading: boolean;
 }
