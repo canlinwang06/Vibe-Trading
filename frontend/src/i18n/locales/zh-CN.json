@@ -5,6 +5,8 @@
   "layout": {
     "productName": "A 股策略中台",
     "dashboard": "A 股驾驶舱",
+    "eventRecords": "事件记录库",
+    "sectorStockAnalysis": "板块及股票分析",
     "eventRadar": "事件雷达",
     "sectorRadar": "板块雷达",
     "eventReactions": "事件反应",

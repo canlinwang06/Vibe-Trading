@@ -25,6 +25,12 @@ const AlphaZoo = lazy(() =>
 const EventRadar = lazy(() =>
   import("@/pages/EventRadar").then((m) => ({ default: m.EventRadar })),
 );
+const EventRecords = lazy(() =>
+  import("@/pages/EventRecords").then((m) => ({ default: m.EventRecords })),
+);
+const SectorStockAnalysis = lazy(() =>
+  import("@/pages/SectorStockAnalysis").then((m) => ({ default: m.SectorStockAnalysis })),
+);
 const SectorRadar = lazy(() =>
   import("@/pages/SectorRadar").then((m) => ({ default: m.SectorRadar })),
 );
@@ -77,6 +83,8 @@ export const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: "/", element: wrap(Home) },
+      { path: "/event-records", element: wrap(EventRecords) },
+      { path: "/sector-stock-analysis", element: wrap(SectorStockAnalysis) },
       { path: "/event-radar", element: wrap(EventRadar) },
       { path: "/sector-radar", element: wrap(SectorRadar) },
       { path: "/event-reactions", element: wrap(EventReactions) },

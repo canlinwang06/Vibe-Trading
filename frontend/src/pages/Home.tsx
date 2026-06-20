@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
-import { BarChart3, ClipboardList, FileText, Layers, ListChecks, Radar, ShieldCheck, Target } from "lucide-react";
+import { BarChart3, ClipboardList, FileText, Layers, ListChecks, ShieldCheck } from "lucide-react";
 
 const WORKFLOW = [
-  { title: "事件雷达", desc: "收集热点事件并判断 A 股相关度", to: "/event-radar", icon: Radar },
-  { title: "板块雷达", desc: "观察行业和概念板块热度", to: "/sector-radar", icon: Layers },
-  { title: "事件反应", desc: "复盘事件后 T+1/T+5/T+20/T+60 表现", to: "/event-reactions", icon: BarChart3 },
-  { title: "候选股票池", desc: "沉淀可复核的沪深 A 股候选标的", to: "/candidate-pool", icon: Target },
+  { title: "事件记录库", desc: "客观沉淀事件、原文证据和事后影响", to: "/event-records", icon: ClipboardList },
+  { title: "板块及股票分析", desc: "基于历史事件分析热点板块和建议观察股票", to: "/sector-stock-analysis", icon: Layers },
+  { title: "策略实验室", desc: "把观察股票池转换为可复核的策略草稿", to: "/strategy-lab", icon: BarChart3 },
   { title: "回测结果", desc: "验收策略收益、回撤和交易成本", to: "/backtest-results", icon: BarChart3 },
   { title: "风控组合", desc: "统一多策略资金分配和目标持仓", to: "/risk-portfolio", icon: ShieldCheck },
   { title: "聚宽导出", desc: "复制到聚宽回测或模拟运行", to: "/joinquant-export", icon: FileText },
@@ -33,7 +32,7 @@ export function Home() {
               A 股事件驱动策略驾驶舱
             </h1>
             <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              从事件、板块、候选股票到策略回测、风控组合和聚宽导出，所有入口都围绕沪深 A 股研究流程组织。
+              先沉淀客观事件记录，再分析板块热度和候选股票，最后生成可复制到聚宽的策略草稿。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -72,7 +71,7 @@ export function Home() {
           <div>
             <h2 className="text-sm font-semibold">当前阶段状态</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              核心研究链路已接入本地事件抽取、板块评分、候选股票、批量回测、风控组合和聚宽复制包。
+              核心研究链路已按“事件记录库”和“板块及股票分析”两层组织，策略输出保持研究与模拟边界。
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">

@@ -1,9 +1,7 @@
 export const ASHARE_NAV_ITEMS = [
   { to: "/", labelKey: "layout.dashboard" },
-  { to: "/event-radar", labelKey: "layout.eventRadar" },
-  { to: "/sector-radar", labelKey: "layout.sectorRadar" },
-  { to: "/event-reactions", labelKey: "layout.eventReactions" },
-  { to: "/candidate-pool", labelKey: "layout.candidatePool" },
+  { to: "/event-records", labelKey: "layout.eventRecords" },
+  { to: "/sector-stock-analysis", labelKey: "layout.sectorStockAnalysis" },
   { to: "/strategy-lab", labelKey: "layout.strategyLab" },
   { to: "/backtest-results", labelKey: "layout.backtestResults" },
   { to: "/risk-portfolio", labelKey: "layout.riskPortfolio" },
@@ -16,10 +14,8 @@ export const ASHARE_NAV_ITEMS = [
 
 export const ASHARE_NAV_LABELS_ZH = [
   "A 股驾驶舱",
-  "事件雷达",
-  "板块雷达",
-  "事件反应",
-  "候选股票池",
+  "事件记录库",
+  "板块及股票分析",
   "策略实验室",
   "回测结果",
   "风控组合",
