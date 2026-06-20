@@ -321,7 +321,7 @@ class BacktestFactoryService:
         eligible = [item for item in candidates if item.risk_flag in {"normal", "limit_up_crowding"}]
         if spec.strategy_type == "user_watchlist_enhanced":
             eligible = [item for item in eligible if item.source == "user_added"]
-        if spec.strategy_type == "defensive_cash":
+        if spec.strategy_type in {"defensive_cash", "overheated_avoidance"}:
             eligible = [item for item in eligible if item.risk_flag == "normal"]
         if not eligible:
             eligible = candidates

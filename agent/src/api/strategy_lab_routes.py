@@ -86,6 +86,10 @@ def register_strategy_lab_routes(app: FastAPI, require_local_or_auth: AuthDep | 
         templates = _service().list_templates()
         return {"templates": templates, "template_count": len(templates)}
 
+    @app.get("/api/strategy-lab/template-taxonomy", dependencies=[Depends(auth)])
+    def list_strategy_template_taxonomy() -> dict[str, Any]:
+        return _service().list_template_taxonomy()
+
     @app.post("/api/strategy-lab/specs/seed", dependencies=[Depends(auth)])
     def seed_strategy_specs(payload: StrategySpecSeedRequest) -> dict[str, Any]:
         try:

@@ -19,9 +19,16 @@ class StrategyLabError(RuntimeError):
 class StrategyTemplate:
     strategy_type: str
     template_name: str
+    strategy_family: str
+    idea_category: str
+    signal_source: str
+    market_regimes: tuple[str, ...]
+    cycle_stages: tuple[str, ...]
     description: str
     signal_rules: tuple[str, ...]
     risk_notes: tuple[str, ...]
+    idea_prompt: str
+    generator_enabled: bool
     default_rebalance_freq: str
     default_holding_period: int
     default_max_position: float
@@ -52,6 +59,11 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
     StrategyTemplate(
         strategy_type="hot_sector_equal_weight",
         template_name="S01 热点板块等权策略",
+        strategy_family="板块轮动",
+        idea_category="热点板块等权",
+        signal_source="sector_heat",
+        market_regimes=("neutral", "attack"),
+        cycle_stages=("warming", "confirmed"),
         description=(
             "选择 sector_heat_score 排名前 N 的板块，"
             "每个板块选 stock_score 前 M 的股票，等权纳入。"
@@ -62,6 +74,8 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
             "候选股 included 必须为 true",
         ),
         risk_notes=("避免单板块过度集中", "板块热度退潮时降低纳入比例"),
+        idea_prompt="当热点板块刚升温或确认时，生成一组分散的主题轮动回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="weekly",
         default_holding_period=5,
         default_max_position=0.08,
@@ -73,12 +87,19 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
     StrategyTemplate(
         strategy_type="hot_sector_relative_strength",
         template_name="S02 热点板块 + 相对强度策略",
+        strategy_family="趋势确认",
+        idea_category="热点板块相对强度",
+        signal_source="sector_heat+relative_strength",
+        market_regimes=("neutral", "attack"),
+        cycle_stages=("confirmed", "accelerating"),
         description=(
             "只买热门板块中相对板块更强的股票，"
             "优先选择板块龙头和高 stock_score 标的。"
         ),
         signal_rules=("sector_heat_score 高于阈值", "个股 20 日相对强度为正", "stock_score 排名靠前"),
         risk_notes=("强势股可能短期拥挤", "需要避免追高后一致预期回落"),
+        idea_prompt="当板块热度和个股强度同时确认时，生成强势股跟随回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="weekly",
         default_holding_period=10,
         default_max_position=0.07,
@@ -90,9 +111,16 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
     StrategyTemplate(
         strategy_type="event_heat_volume_confirm",
         template_name="S03 事件热度 + 成交额确认策略",
+        strategy_family="事件确认",
+        idea_category="事件确认",
+        signal_source="event_heat+volume_confirm",
+        market_regimes=("neutral", "attack"),
+        cycle_stages=("warming", "confirmed", "accelerating"),
         description="事件热度上升、板块和个股成交额确认后，次日进入观察组合。",
         signal_rules=("event_heat_score 上升", "板块成交额放大", "个股量价确认不低于阈值"),
         risk_notes=("成交额放大可能来自分歧加剧", "事件次日可能出现高开回落"),
+        idea_prompt="当事件可信度较高且市场成交确认时，生成短周期事件驱动回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="daily",
         default_holding_period=3,
         default_max_position=0.05,
@@ -104,9 +132,16 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
     StrategyTemplate(
         strategy_type="hot_sector_pullback",
         template_name="S04 热点板块回调买入策略",
+        strategy_family="回调交易",
+        idea_category="回调买入",
+        signal_source="sector_heat+pullback",
+        market_regimes=("neutral", "attack"),
+        cycle_stages=("confirmed", "accelerating"),
         description="在板块热度仍高时，等待趋势股回踩均线或缩量回调后纳入。",
         signal_rules=("sector_heat_score 保持高位", "个股趋势向上", "回调幅度不破风险阈值"),
         risk_notes=("回调可能转为退潮", "需要控制补跌和流动性风险"),
+        idea_prompt="当热点仍在但短线涨幅较大时，生成等待回踩确认的回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="weekly",
         default_holding_period=8,
         default_max_position=0.06,
@@ -118,9 +153,16 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
     StrategyTemplate(
         strategy_type="leader_breakout",
         template_name="S05 龙头突破策略",
+        strategy_family="龙头进攻",
+        idea_category="龙头突破",
+        signal_source="leader_strength+breakout",
+        market_regimes=("attack",),
+        cycle_stages=("accelerating",),
         description="在热门板块中筛选创新高且成交额放大的龙头股票。",
         signal_rules=("热门板块内 stock_score 靠前", "个股创阶段新高", "成交额确认"),
         risk_notes=("突破失败会快速回撤", "连续涨停后成交可得性较差"),
+        idea_prompt="当热点进入加速期时，生成龙头突破和短周期进攻回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="daily",
         default_holding_period=5,
         default_max_position=0.05,
@@ -130,11 +172,39 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
         default_take_profit=0.15,
     ),
     StrategyTemplate(
+        strategy_type="catch_up_spread",
+        template_name="S06 补涨扩散策略",
+        strategy_family="扩散补涨",
+        idea_category="补涨扩散",
+        signal_source="sector_heat+laggard_score",
+        market_regimes=("neutral", "attack"),
+        cycle_stages=("confirmed", "accelerating"),
+        description="在热点板块龙头已上涨后，寻找同板块内评分提升但涨幅相对滞后的股票。",
+        signal_rules=("热点板块仍保持高分", "股票 stock_score 上升", "短期涨幅低于板块龙头"),
+        risk_notes=("补涨可能变成跟跌", "需要避免低流动性后排股票"),
+        idea_prompt="当热点从龙头向板块内部扩散时，生成补涨观察和分散回测假设。",
+        generator_enabled=True,
+        default_rebalance_freq="weekly",
+        default_holding_period=5,
+        default_max_position=0.06,
+        default_max_sector_exposure=0.32,
+        default_max_total_exposure=0.55,
+        default_stop_loss=0.07,
+        default_take_profit=0.16,
+    ),
+    StrategyTemplate(
         strategy_type="low_vol_core",
-        template_name="S06 低波动核心票策略",
+        template_name="S07 防守低波核心票策略",
+        strategy_family="防守核心",
+        idea_category="防守低波",
+        signal_source="sector_heat+liquidity_risk",
+        market_regimes=("defense", "neutral"),
+        cycle_stages=("warming", "confirmed"),
         description="在热门板块中选择流动性好、波动较低、趋势稳定的核心股票。",
         signal_rules=("sector_heat_score 达标", "流动性评分达标", "风险标记为 normal"),
         risk_notes=("收益弹性可能低于高波动股票", "适合作为组合稳定器而非唯一进攻策略"),
+        idea_prompt="当用户偏保守或市场信心一般时，生成低波动核心票回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="weekly",
         default_holding_period=15,
         default_max_position=0.10,
@@ -144,32 +214,22 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
         default_take_profit=0.14,
     ),
     StrategyTemplate(
-        strategy_type="user_watchlist_enhanced",
-        template_name="S07 用户自选股增强策略",
-        description=(
-            "只从用户手动加入的股票中，"
-            "选择同时满足热点板块、趋势确认和风险约束的标的。"
-        ),
-        signal_rules=("source 为 user_added", "included 为 true", "sector_heat_score 和 stock_score 达标"),
-        risk_notes=("用户偏好可能带来主观集中", "需要保留系统风险过滤"),
-        default_rebalance_freq="weekly",
-        default_holding_period=10,
-        default_max_position=0.08,
-        default_max_sector_exposure=0.35,
-        default_max_total_exposure=0.50,
-        default_stop_loss=0.08,
-        default_take_profit=0.18,
-    ),
-    StrategyTemplate(
-        strategy_type="defensive_cash",
-        template_name="S08 防守现金策略",
-        description="市场环境弱或热点分数下降时降低总仓位，无强热点时保留现金。",
+        strategy_type="overheated_avoidance",
+        template_name="S08 过热规避策略",
+        strategy_family="风险控制",
+        idea_category="过热规避",
+        signal_source="crowding_risk+cycle_stage",
+        market_regimes=("defense", "low_confidence"),
+        cycle_stages=("climax", "fading"),
+        description="板块拥挤风险上升或热度退潮时降低总仓位，避免追高进入过热主题。",
         signal_rules=(
-            "无强热点时提高现金比例",
+            "crowding_risk 高时降低纳入比例",
             "crowding_risk 高时降低仓位",
             "fading 阶段不新增仓",
         ),
         risk_notes=("防守策略可能错过快速反弹", "需要和进攻模板组合使用"),
+        idea_prompt="当热点过热或退潮时，生成降低暴露、只保留观察的防守回测假设。",
+        generator_enabled=True,
         default_rebalance_freq="weekly",
         default_holding_period=5,
         default_max_position=0.04,
@@ -200,9 +260,15 @@ def _strategy_id(strategy_type: str, suffix: str) -> str:
 def _params(template: StrategyTemplate, variant: StrategyVariant) -> dict[str, Any]:
     return {
         "template_name": template.template_name,
+        "strategy_family": template.strategy_family,
+        "idea_category": template.idea_category,
+        "signal_source": template.signal_source,
+        "market_regimes": list(template.market_regimes),
+        "cycle_stages": list(template.cycle_stages),
         "description": template.description,
         "signal_rules": list(template.signal_rules),
         "risk_notes": list(template.risk_notes),
+        "idea_prompt": template.idea_prompt,
         "top_sectors": variant.top_sectors,
         "top_stocks_per_sector": variant.top_stocks_per_sector,
         "confirmation_threshold": variant.confirmation_threshold,
@@ -243,9 +309,16 @@ class StrategyLabService:
             {
                 "strategy_type": template.strategy_type,
                 "template_name": template.template_name,
+                "strategy_family": template.strategy_family,
+                "idea_category": template.idea_category,
+                "signal_source": template.signal_source,
+                "market_regimes": list(template.market_regimes),
+                "cycle_stages": list(template.cycle_stages),
                 "description": template.description,
                 "signal_rules": list(template.signal_rules),
                 "risk_notes": list(template.risk_notes),
+                "idea_prompt": template.idea_prompt,
+                "generator_enabled": template.generator_enabled,
                 "default_rebalance_freq": template.default_rebalance_freq,
                 "default_holding_period": template.default_holding_period,
                 "default_max_position": template.default_max_position,
@@ -256,6 +329,27 @@ class StrategyLabService:
             }
             for template in STRATEGY_TEMPLATES
         ]
+
+    def list_template_taxonomy(self) -> dict[str, Any]:
+        templates = self.list_templates()
+        families: dict[str, list[str]] = {}
+        categories: dict[str, str] = {}
+        signal_sources: dict[str, list[str]] = {}
+        for template in templates:
+            families.setdefault(template["strategy_family"], []).append(template["strategy_type"])
+            categories[template["strategy_type"]] = template["idea_category"]
+            signal_sources.setdefault(template["signal_source"], []).append(template["strategy_type"])
+        return {
+            "template_count": len(templates),
+            "families": families,
+            "categories": categories,
+            "signal_sources": signal_sources,
+            "generator_enabled_types": [
+                template["strategy_type"] for template in templates if template["generator_enabled"]
+            ],
+            "research_only": True,
+            "live_trading": False,
+        }
 
     def seed_strategy_specs(self, *, replace: bool = False) -> dict[str, Any]:
         self.store.initialize()
@@ -381,6 +475,12 @@ class StrategyLabService:
         payload = dict(params)
         payload.setdefault("execution_mode", "research_only")
         payload.setdefault("data_inputs", ["candidate_pool", "sector_scores"])
+        template = next(item for item in STRATEGY_TEMPLATES if item.strategy_type == strategy_type)
+        payload.setdefault("strategy_family", template.strategy_family)
+        payload.setdefault("idea_category", template.idea_category)
+        payload.setdefault("signal_source", template.signal_source)
+        payload.setdefault("market_regimes", list(template.market_regimes))
+        payload.setdefault("cycle_stages", list(template.cycle_stages))
         with self.store.connect() as conn:
             conn.execute("DELETE FROM strategy_specs WHERE strategy_id = ?", [strategy_id])
             conn.execute(

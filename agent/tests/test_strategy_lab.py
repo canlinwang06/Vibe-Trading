@@ -33,6 +33,26 @@ def test_strategy_templates_expose_eight_auditable_templates(strategy_lab: Strat
     }
     assert all(template["signal_rules"] for template in templates)
     assert all(template["risk_notes"] for template in templates)
+    assert all(template["strategy_family"] for template in templates)
+    assert all(template["idea_category"] for template in templates)
+    assert {template["idea_category"] for template in templates}.issuperset(
+        {"热点板块等权", "补涨扩散", "过热规避"}
+    )
+    assert all(template["generator_enabled"] is True for template in templates)
+
+
+def test_strategy_template_taxonomy_groups_generator_templates(strategy_lab: StrategyLabService) -> None:
+    taxonomy = strategy_lab.list_template_taxonomy()
+
+    assert taxonomy["template_count"] == 8
+    assert "板块轮动" in taxonomy["families"]
+    assert taxonomy["categories"]["catch_up_spread"] == "补涨扩散"
+    assert taxonomy["categories"]["overheated_avoidance"] == "过热规避"
+    assert set(taxonomy["generator_enabled_types"]) == {
+        template.strategy_type for template in STRATEGY_TEMPLATES
+    }
+    assert taxonomy["research_only"] is True
+    assert taxonomy["live_trading"] is False
 
 
 def test_seed_strategy_specs_writes_twenty_four_variants(strategy_lab: StrategyLabService) -> None:
@@ -46,6 +66,7 @@ def test_seed_strategy_specs_writes_twenty_four_variants(strategy_lab: StrategyL
     assert second["strategy_specs_skipped"] == 24
     assert len(specs) == 24
     assert {spec["params"]["execution_mode"] for spec in specs} == {"research_only"}
+    assert {spec["params"]["strategy_family"] for spec in specs}.issuperset({"板块轮动", "风险控制"})
     assert all(spec["market"] == "CN_A" for spec in specs)
     assert all(spec["enabled"] is True for spec in specs)
 
@@ -95,6 +116,10 @@ def test_strategy_lab_api_seed_list_and_create_round_trip(client: TestClient) ->
     assert templates.status_code == 200
     assert templates.json()["template_count"] == 8
 
+    taxonomy = client.get("/api/strategy-lab/template-taxonomy")
+    assert taxonomy.status_code == 200
+    assert taxonomy.json()["categories"]["catch_up_spread"] == "补涨扩散"
+
     seed = client.post("/api/strategy-lab/specs/seed", json={"replace": False})
     assert seed.status_code == 200
     assert seed.json()["strategy_specs_written"] == 24
@@ -107,8 +132,8 @@ def test_strategy_lab_api_seed_list_and_create_round_trip(client: TestClient) ->
     create = client.post(
         "/api/strategy-lab/specs",
         json={
-            "strategy_type": "defensive_cash",
-            "strategy_name": "S08 自定义防守现金策略",
+            "strategy_type": "overheated_avoidance",
+            "strategy_name": "S08 自定义过热规避策略",
             "params": {"cash_floor": 0.4},
             "rebalance_freq": "weekly",
             "holding_period": 5,
@@ -117,10 +142,11 @@ def test_strategy_lab_api_seed_list_and_create_round_trip(client: TestClient) ->
             "max_total_exposure": 0.3,
             "stop_loss": 0.04,
             "take_profit": 0.08,
-        },
+            },
     )
     assert create.status_code == 200
-    assert create.json()["strategy_type"] == "defensive_cash"
+    assert create.json()["strategy_type"] == "overheated_avoidance"
+    assert create.json()["params"]["idea_category"] == "过热规避"
 
 
 def test_strategy_lab_api_returns_chinese_error_for_unknown_template(client: TestClient) -> None:
