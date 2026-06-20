@@ -35,6 +35,8 @@ export function Layout() {
 
   const iconByRoute = {
     "/": Gauge,
+    "/event-records": ClipboardList,
+    "/sector-stock-analysis": Layers,
     "/event-radar": Radar,
     "/sector-radar": Layers,
     "/event-reactions": BarChart3,
