@@ -3305,6 +3305,9 @@ register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
 from src.api.event_radar_routes import register_event_radar_routes  # noqa: E402
 register_event_radar_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.event_records_routes import register_event_records_routes  # noqa: E402
+register_event_records_routes(app, require_local_or_auth=require_local_or_auth)
+
 from src.api.event_reaction_routes import register_event_reaction_routes  # noqa: E402
 register_event_reaction_routes(app, require_local_or_auth=require_local_or_auth)
 
