@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr09-candidate-pool.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "PR-09 acceptance failed: %s\n" "$1" >&2
+  exit 1
+}
+
+step "Run PR-09 candidate-pool tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_candidate_pool.py" "$ROOT/agent/tests/test_ashare_data_store.py" -q
+
+step "Check candidate-pool API routes are mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/candidate-pool",
+    "/api/candidate-pool/build",
+    "/api/candidate-pool/user-add",
+    "/api/candidate-pool/include",
+    "/api/candidate-pool/exclude",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing candidate-pool API routes: {missing}")
+PY
+
+printf "\nPR-09 acceptance passed.\n"

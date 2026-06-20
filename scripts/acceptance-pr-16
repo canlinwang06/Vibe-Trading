@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+TMP_DIR="$(mktemp -d -t vibe-pr16-joinquant-copy-package.XXXXXX)"
+
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-16 JoinQuant strategy-code and copy-package tests"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" -m pytest \
+  "$ROOT/agent/tests/test_joinquant_adapter.py" -q
+
+step "Check JoinQuant strategy-code API routes are mounted"
+ASHARE_DATA_ROOT="$TMP_DIR/runtime" PYTHONPATH="$ROOT/agent${PYTHONPATH:+:$PYTHONPATH}" "$PYTHON_BIN" - <<'PY'
+from __future__ import annotations
+
+import api_server
+
+paths = {route.path for route in api_server.app.routes}
+required = {
+    "/api/joinquant/export/strategy-code",
+    "/api/joinquant/export/copy-package",
+}
+missing = sorted(required - paths)
+if missing:
+    raise SystemExit(f"missing JoinQuant strategy-code API routes: {missing}")
+PY
+
+printf "\nPR-16 acceptance passed.\n"

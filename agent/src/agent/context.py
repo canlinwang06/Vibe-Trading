@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
+from src.market_policy import agent_market_boundary_prompt
 
 if TYPE_CHECKING:
     from src.memory.persistent import PersistentMemory
@@ -68,6 +69,8 @@ Decide which workflow to use based on the request:
 5. `render_shadow_report(shadow_id=...)` → share html/pdf path, lead with the Section 5 "you vs shadow" delta
 6. Optional: `scan_shadow_signals(shadow_id=...)` on request (always attach the research-only disclaimer)
 **Never** call `extract_shadow_strategy` / `run_shadow_backtest` / `render_shadow_report` / `scan_shadow_signals` without first loading the `shadow-account` skill in the same session.
+
+{market_policy_section}
 
 ## Guidelines
 
@@ -146,6 +149,7 @@ class ContextBuilder:
             skill_descriptions=self.skills_loader.get_descriptions(),
             memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
+            market_policy_section=agent_market_boundary_prompt(),
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M (local)"),
         )
 

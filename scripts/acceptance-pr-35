@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+step "Run PR-35 data-source UI tests"
+npm --prefix "$ROOT/frontend" run test:run -- \
+  src/pages/__tests__/DataSources.test.tsx \
+  src/config/__tests__/ashareNavigation.test.ts \
+  src/components/layout/__tests__/Layout.test.tsx \
+  src/pages/__tests__/Home.test.tsx
+
+step "Check data-source route, UI, and credential guardrails"
+node - "$ROOT" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const root = process.argv[2];
+const page = fs.readFileSync(path.join(root, "frontend/src/pages/DataSources.tsx"), "utf8");
+const tests = fs.readFileSync(path.join(root, "frontend/src/pages/__tests__/DataSources.test.tsx"), "utf8");
+const router = fs.readFileSync(path.join(root, "frontend/src/router.tsx"), "utf8");
+const api = fs.readFileSync(path.join(root, "frontend/src/lib/api.ts"), "utf8");
+const dataSourcesRouteStart = router.indexOf("const DataSources");
+const dataSourcesRouteEnd = router.indexOf("function PageLoader");
+const dataSourcesRouteBlock = dataSourcesRouteStart >= 0 && dataSourcesRouteEnd > dataSourcesRouteStart
+  ? router.slice(dataSourcesRouteStart, dataSourcesRouteEnd)
+  : "";
+
+const required = [
+  ["router uses real DataSources page", router.includes("@/pages/DataSources")],
+  ["data-source route no longer points to placeholder", !dataSourcesRouteBlock.includes("@/pages/AsharePlaceholder")],
+  ["settings read API is wired", page.includes("getDataSourceSettings") && api.includes("/settings/data-sources")],
+  ["settings update API is wired", page.includes("updateDataSourceSettings")],
+  ["Chinese page title exists", page.includes("数据源设置")],
+  ["credential section exists", page.includes("凭据管理")],
+  ["safety boundary exists", page.includes("安全边界")],
+  ["free/local priority is visible", page.includes("免费 / 本地优先")],
+  ["clear token action exists", page.includes("清除已保存的 Tushare token")],
+  ["token plaintext is not echoed", page.includes("页面不会显示已保存 token 的明文")],
+  ["Codex login-state guidance exists", page.includes("Codex 登录态")],
+  ["save-token coverage exists", tests.includes("saves a new Tushare token")],
+  ["clear-token coverage exists", tests.includes("clears a saved Tushare token")],
+  ["load-error coverage exists", tests.includes("shows Chinese load and save errors")],
+];
+
+const forbidden = [
+  ["model API key must not be introduced", "OPENAI_API_KEY"],
+  ["external JoinQuant browser launch must not be added", "window.open("],
+  ["external JoinQuant URL must not be hardcoded", "joinquant.com"],
+  ["live order action must not be added", "placeOrder"],
+  ["live runner start must not be added", "startLiveRunner"],
+  ["live authorization must not be added", "authorizeLive"],
+  ["live trading copy must not be added", "实盘下单"],
+];
+
+const missing = required.filter(([, ok]) => !ok).map(([label]) => label);
+const scanned = [page, router].join("\n");
+const violations = forbidden
+  .filter(([, token]) => scanned.includes(token))
+  .map(([label]) => label);
+
+if (missing.length || violations.length) {
+  if (missing.length) console.error("missing:", missing);
+  if (violations.length) console.error("violations:", violations);
+  process.exit(1);
+}
+NODE
+
+printf "\nPR-35 acceptance passed.\n"

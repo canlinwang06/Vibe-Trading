@@ -26,6 +26,12 @@ from backtest.loaders.base import validate_date_range
 from backtest.runner import BacktestConfigSchema
 
 
+@pytest.fixture(autouse=True)
+def legacy_engine_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Engine schema tests keep their historical multi-market coverage."""
+    monkeypatch.setenv("CN_A_ONLY", "0")
+
+
 # ---------------------------------------------------------------------------
 # 1. ffill(limit=5) — long gaps stay NaN
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 // Initialize i18n so `useTranslation()` resolves real strings in tests.
-// With no localStorage entry under jsdom this falls back to English, keeping
-// the suite's English assertions stable.
+// With no localStorage entry under jsdom this falls back to Chinese, matching
+// the A-share product shell default.
 import "../i18n";
 
 // ── Global mocks for jsdom ───────────────────────────────────
