@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from typing import Any, Iterable
 
 from src.ashare_data.store import AShareDataStore
+from src.strategy_lab.service import StrategyLabError, StrategyLabService
 from src.strategy_lab.service import STRATEGY_TEMPLATES, StrategyTemplate
 
 
@@ -223,6 +224,53 @@ class StrategyIdeaService:
         if row is None:
             raise StrategyIdeaError(f"未找到策略想法: {idea_id}")
         return _row_to_idea(row)
+
+    def save_idea_as_strategy_spec(self, *, idea_id: str, enabled: bool = True) -> dict[str, Any]:
+        idea = self.get_idea(idea_id)
+        params = dict(idea["params"])
+        params["source_strategy_idea_id"] = idea["idea_id"]
+        params["source_strategy_idea_status"] = idea["status"]
+        params["theme"] = idea["theme"]
+        params["candidate_tickers"] = idea["candidate_tickers"]
+        params["source_event_ids"] = idea["source_event_ids"]
+        params["entry_rules"] = idea["entry_rules"]
+        params["exit_rules"] = idea["exit_rules"]
+        params["risk_controls"] = idea["risk_controls"]
+        params["evidence"] = idea["evidence"]
+        try:
+            spec = StrategyLabService(store=self.store).create_strategy_spec(
+                strategy_type=idea["strategy_type"],
+                strategy_name=idea["strategy_name"],
+                params=params,
+                rebalance_freq=str(params.get("rebalance_freq") or idea["rebalance_freq"]),
+                holding_period=int(params.get("holding_period") or idea["holding_period"]),
+                max_position=float(params.get("max_position") or 0.08),
+                max_sector_exposure=float(params.get("max_sector_exposure") or 0.35),
+                max_total_exposure=float(params.get("max_total_exposure") or 0.65),
+                stop_loss=float(params.get("stop_loss") or 0.08),
+                take_profit=float(params.get("take_profit") or 0.18),
+                enabled=enabled,
+            )
+        except StrategyLabError as exc:
+            raise StrategyIdeaError(str(exc)) from exc
+
+        now = _utc_now()
+        with self.store.connect() as conn:
+            conn.execute(
+                """
+                UPDATE strategy_ideas
+                SET status = ?, updated_at = ?
+                WHERE idea_id = ?
+                """,
+                ["saved_to_strategy_lab", now, idea["idea_id"]],
+            )
+        return {
+            "status": "ok",
+            "idea_id": idea["idea_id"],
+            "strategy_spec": spec,
+            "research_only": True,
+            "live_trading": False,
+        }
 
     @staticmethod
     def _latest_candidate_date(conn: Any) -> date | None:
