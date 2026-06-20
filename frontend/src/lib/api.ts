@@ -311,6 +311,21 @@ export const api = {
     const qs = q.toString();
     return request<BacktestRankingResponse>(`/api/strategy-lab/backtest-rankings${qs ? `?${qs}` : ""}`);
   },
+  generateStrategyIdeas: (body: StrategyIdeaGenerateRequest) =>
+    request<StrategyIdeaGenerateResponse>("/api/strategy-ideas/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategyIdeas: (params: StrategyIdeaQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.theme) q.set("theme", params.theme);
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategyIdeaListResponse>(`/api/strategy-ideas${qs ? `?${qs}` : ""}`);
+  },
   allocateRiskPortfolio: (body: PortfolioAllocateRequest) =>
     request<PortfolioAllocationResponse>("/api/portfolio-risk/allocate", {
       method: "POST",
@@ -1008,6 +1023,74 @@ export interface BacktestRankingResponse {
   rankings: BacktestRanking[];
   ranking_count: number;
   scoring_model: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaGenerateRequest {
+  theme?: string | null;
+  as_of_date?: string | null;
+  risk_preference?: "conservative" | "balanced" | "aggressive" | string;
+  max_ideas?: number;
+  min_candidate_score?: number;
+  strategy_types?: string[] | null;
+}
+
+export interface StrategyIdeaTicker {
+  ticker: string;
+  ticker_name: string;
+  stock_score: number;
+}
+
+export interface StrategyIdea {
+  idea_id: string;
+  as_of_date?: string | null;
+  theme: string;
+  strategy_type: string;
+  strategy_name: string;
+  strategy_family: string;
+  idea_category: string;
+  risk_preference: string;
+  holding_period: number;
+  rebalance_freq: string;
+  idea_score: number;
+  status: string;
+  thesis: string;
+  candidate_tickers: StrategyIdeaTicker[];
+  sector_ids: string[];
+  source_event_ids: string[];
+  entry_rules: string[];
+  exit_rules: string[];
+  risk_controls: string[];
+  params: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaGenerateResponse {
+  status: string;
+  as_of_date: string;
+  theme: string;
+  risk_preference: string;
+  idea_count: number;
+  ideas: StrategyIdea[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaQuery {
+  as_of_date?: string | null;
+  theme?: string | null;
+  strategy_type?: string | null;
+  status?: string | null;
+  limit?: number;
+}
+
+export interface StrategyIdeaListResponse {
+  status: string;
+  ideas: StrategyIdea[];
+  idea_count: number;
   research_only: boolean;
   live_trading: boolean;
 }
