@@ -72,7 +72,7 @@ export function Home() {
           <div>
             <h2 className="text-sm font-semibold">当前阶段状态</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              当前阶段先提供清晰入口和研究边界，真实数据、事件抽取、批量回测和聚宽复制将在后续模块接入。
+              核心研究链路已接入本地事件抽取、板块评分、候选股票、批量回测、风控组合和聚宽复制包。
             </p>
           </div>
           <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">

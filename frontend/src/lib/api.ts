@@ -143,6 +143,84 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  listEventSources: (params: EventSourceQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.enabled_only !== undefined) q.set("enabled_only", String(params.enabled_only));
+    const qs = q.toString();
+    return request<EventSourceListResponse>(`/api/event-radar/sources${qs ? `?${qs}` : ""}`);
+  },
+  listEventRawDocuments: (params: EventRawDocumentQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.source_type) q.set("source_type", params.source_type);
+    if (params.source_id) q.set("source_id", params.source_id);
+    const qs = q.toString();
+    return request<EventRawDocumentListResponse>(`/api/event-radar/raw-documents${qs ? `?${qs}` : ""}`);
+  },
+  collectEventDocuments: (body: EventRadarCollectRequest) =>
+    request<EventRadarCollectResponse>("/api/event-radar/collect/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  extractEventRadarEvents: (body: EventRadarExtractRequest) =>
+    request<EventRadarExtractResponse>("/api/event-radar/extract/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventRadarEvents: (params: EventRadarEventQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_type) q.set("event_type", params.event_type);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRadarEventListResponse>(`/api/event-radar/events${qs ? `?${qs}` : ""}`);
+  },
+  listEventRadarClusters: (params: EventRadarClusterQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.status) q.set("status", params.status);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRadarClusterListResponse>(`/api/event-radar/clusters${qs ? `?${qs}` : ""}`);
+  },
+  listEventRadarThemeMap: (params: EventRadarThemeMapQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.theme) q.set("theme", params.theme);
+    const qs = q.toString();
+    return request<EventRadarThemeMapResponse>(`/api/event-radar/theme-map${qs ? `?${qs}` : ""}`);
+  },
+  mapEventRadarEvents: (body: EventRadarMapRequest) =>
+    request<EventRadarMapResponse>("/api/event-radar/map/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventSectorMappings: (params: EventMappingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventSectorMappingListResponse>(`/api/event-radar/mappings/sectors${qs ? `?${qs}` : ""}`);
+  },
+  listEventStockMappings: (params: EventMappingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventStockMappingListResponse>(`/api/event-radar/mappings/stocks${qs ? `?${qs}` : ""}`);
+  },
+  runSectorScoring: (body: SectorScoreRunRequest) =>
+    request<SectorScoreRunResponse>("/api/event-radar/sector-scores/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listSectorScores: (params: SectorScoreQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.min_score !== undefined) q.set("min_score", String(params.min_score));
+    const qs = q.toString();
+    return request<SectorScoreListResponse>(`/api/event-radar/sector-scores${qs ? `?${qs}` : ""}`);
+  },
   joinQuantPreflight: (body: JoinQuantExportRequest) =>
     request<JoinQuantPreflightResponse>("/api/joinquant/export/preflight", {
       method: "POST",
@@ -1189,6 +1267,289 @@ export interface EventReactionSummaryResponse {
   summary_count: number;
   research_only: boolean;
   live_trading: boolean;
+}
+
+export interface EventSourceQuery {
+  enabled_only?: boolean;
+}
+
+export interface EventSourceRecord {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  endpoint_type: string;
+  url_or_route: string;
+  fetch_interval_minutes: number;
+  parser: string;
+  credibility: number;
+  legal_mode: string;
+  enabled: boolean;
+  last_fetch_time?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface EventSourceListResponse {
+  sources: EventSourceRecord[];
+  source_count: number;
+}
+
+export interface EventRawDocumentQuery {
+  limit?: number;
+  source_type?: string | null;
+  source_id?: string | null;
+}
+
+export interface EventRawDocument {
+  doc_id: string;
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  title: string;
+  content: string;
+  summary?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  content_hash: string;
+  language: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json: Record<string, unknown>;
+  credibility: number;
+  created_at?: string | null;
+}
+
+export interface EventRawDocumentListResponse {
+  documents: EventRawDocument[];
+  document_count: number;
+}
+
+export interface EventRadarDocumentPayload {
+  source_id: string;
+  title: string;
+  content: string;
+  publish_time: string;
+  summary?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  language?: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface EventRadarCollectRequest {
+  documents: EventRadarDocumentPayload[];
+}
+
+export interface EventRadarCollectResponse {
+  status: string;
+  requested: number;
+  inserted: number;
+  duplicates: number;
+  doc_ids: string[];
+  duplicate_doc_ids: string[];
+  source_ids: string[];
+  crawl_time: string;
+}
+
+export interface EventRadarExtractRequest {
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface EventRadarExtractResponse {
+  status: string;
+  requested: number;
+  extracted: number;
+  skipped_low_relevance: number;
+  event_ids: string[];
+  cluster_ids: string[];
+}
+
+export interface EventRadarEventQuery {
+  limit?: number;
+  event_type?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRadarEvent {
+  event_id: string;
+  cluster_id: string;
+  doc_id: string;
+  event_time?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  knowable_time?: string | null;
+  tradable_time?: string | null;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  certainty: number;
+  a_share_relevance_score: number;
+  policy_level?: string | null;
+  created_at?: string | null;
+}
+
+export interface EventRadarEventListResponse {
+  events: EventRadarEvent[];
+  event_count: number;
+}
+
+export interface EventRadarClusterQuery {
+  limit?: number;
+  status?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRadarCluster {
+  cluster_id: string;
+  first_seen_time?: string | null;
+  last_seen_time?: string | null;
+  main_title: string;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  hot_score: number;
+  a_share_relevance_score: number;
+  source_count: number;
+  mention_count: number;
+  cross_platform_score: number;
+  status: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface EventRadarClusterListResponse {
+  clusters: EventRadarCluster[];
+  cluster_count: number;
+}
+
+export interface EventRadarThemeMapQuery {
+  theme?: string | null;
+}
+
+export interface EventRadarThemeMapRecord {
+  theme: string;
+  sub_theme: string;
+  keyword: string;
+  sector_id: string;
+  sector_name: string;
+  ticker: string;
+  ticker_name: string;
+  relevance: number;
+  evidence: string;
+  source: string;
+  updated_at?: string | null;
+}
+
+export interface EventRadarThemeMapResponse {
+  theme_map: EventRadarThemeMapRecord[];
+  row_count: number;
+}
+
+export interface EventRadarMapRequest {
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface EventRadarMapResponse {
+  status: string;
+  requested_events: number;
+  mapped_events: number;
+  sector_rows_written: number;
+  stock_rows_written: number;
+  event_ids: string[];
+}
+
+export interface EventMappingQuery {
+  event_id?: string | null;
+  limit?: number;
+}
+
+export interface EventSectorMapping {
+  event_id: string;
+  cluster_id: string;
+  sector_id: string;
+  sector_name: string;
+  theme: string;
+  sub_theme: string;
+  relevance: number;
+  direction: string;
+  mapping_reason: string;
+  created_at?: string | null;
+}
+
+export interface EventSectorMappingListResponse {
+  sector_mappings: EventSectorMapping[];
+  row_count: number;
+}
+
+export interface EventStockMapping {
+  event_id: string;
+  cluster_id: string;
+  ticker: string;
+  ticker_name: string;
+  theme: string;
+  sector_id: string;
+  relevance: number;
+  direction: string;
+  mapping_reason: string;
+  created_at?: string | null;
+}
+
+export interface EventStockMappingListResponse {
+  stock_mappings: EventStockMapping[];
+  row_count: number;
+}
+
+export interface SectorScoreRunRequest {
+  trade_date?: string | null;
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface SectorScoreRecord {
+  trade_date?: string | null;
+  sector_id: string;
+  sector_name: string;
+  event_heat: number;
+  market_confirm: number;
+  breadth_score: number;
+  flow_score: number;
+  persistence_score: number;
+  crowding_risk: number;
+  sector_heat_score: number;
+  cycle_stage: string;
+  created_at?: string | null;
+}
+
+export interface SectorScoreRunResponse {
+  status: string;
+  trade_date: string;
+  scored_sectors: number;
+  rows_written: number;
+  top_sectors: SectorScoreRecord[];
+}
+
+export interface SectorScoreQuery {
+  trade_date?: string | null;
+  limit?: number;
+  min_score?: number;
+}
+
+export interface SectorScoreListResponse {
+  sector_scores: SectorScoreRecord[];
+  row_count: number;
 }
 
 // --- Types matching backend API contracts ---
