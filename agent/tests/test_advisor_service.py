@@ -711,6 +711,33 @@ def test_advisor_external_validation_writeback_is_visible_in_journal_snapshot(
     assert "聚宽" in snapshot["external_validations"][0]["summary"]
 
 
+def test_advisor_external_validation_can_downgrade_candidate_status(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+    service.record_external_validation(
+        source="joinquant",
+        source_ref="jq-run-risk-001",
+        subject_type="ticker",
+        subject_id="000977.SZ",
+        validation_date="2026-06-22",
+        status="failed",
+        metrics={"annual_return": -0.06, "max_drawdown": -0.18},
+        summary="模拟回测回撤超过当前筛选门槛。",
+    )
+
+    candidates = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = candidates["candidates"][0]
+    risks = service.build_risk_filters(as_of_date="2026-06-22")
+    rule_ids = {item["rule_id"] for item in risks["do_not_buy_items"]}
+
+    assert candidate["suggested_status"] == "risk_high"
+    assert candidate["suggested_status_label"] == "验证未通过"
+    assert candidate["evidence"]["external_validation"]["source"] == "joinquant"
+    assert "external_validation_failed" in rule_ids
+
+
 def test_advisor_display_snapshots_are_page_ready(
     service: AdvisorService,
     store: AShareDataStore,

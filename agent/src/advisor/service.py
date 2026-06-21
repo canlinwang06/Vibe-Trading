@@ -44,6 +44,10 @@ STRATEGY_TYPE_LABELS = {
     "backtest_candidate": "回测候选策略",
 }
 
+VALIDATION_PASS_STATUSES = {"pass", "passed", "ok", "success", "通过", "已通过"}
+VALIDATION_REVIEW_STATUSES = {"needs_review", "review", "warning", "待复盘", "需要复盘", "需复盘"}
+VALIDATION_FAIL_STATUSES = {"fail", "failed", "not_passed", "rejected", "invalid", "失败", "未通过", "不通过"}
+
 
 class AdvisorError(RuntimeError):
     """Raised when an advisor ledger operation cannot be completed."""
@@ -858,10 +862,12 @@ class AdvisorService:
                     as_of=as_of,
                     stale_after_days=max(int(stale_after_days), 1),
                 )
+                validation = self._latest_validation_for_candidate(conn, clean_portfolio_id, row, thesis)
                 candidate = self._evaluate_watchlist_candidate(
                     source=row,
                     thesis=thesis,
                     price=price,
+                    validation=validation,
                     as_of=as_of,
                     held_tickers=held_tickers,
                 )
@@ -1706,12 +1712,63 @@ class AdvisorService:
         except AdvisorError:
             return None
 
+    def _latest_validation_for_candidate(
+        self,
+        conn: Any,
+        portfolio_id: str,
+        source: dict[str, Any],
+        thesis: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        subject_ids = {
+            str(value)
+            for value in (
+                source.get("ticker"),
+                source.get("item_id"),
+                source.get("theme"),
+                source.get("strategy_type"),
+                thesis.get("thesis_id") if thesis else None,
+                thesis.get("strategy_type") if thesis else None,
+            )
+            if value
+        }
+        if not subject_ids:
+            return None
+        placeholders = ", ".join(["?"] * len(subject_ids))
+        row = conn.execute(
+            f"""
+            SELECT validation_id, source, source_ref, subject_type, subject_id,
+                   validation_date, status, metrics_json, summary, raw_result_json,
+                   created_by, created_at
+            FROM external_validation_results
+            WHERE portfolio_id = ? AND subject_id IN ({placeholders})
+            ORDER BY validation_date DESC, created_at DESC
+            LIMIT 1
+            """,
+            [portfolio_id, *sorted(subject_ids)],
+        ).fetchone()
+        if row is None:
+            return None
+        return self._validation_tuple_to_dict(row, include_raw=False)
+
+    def _external_validation_signal(self, validation: dict[str, Any] | None) -> str:
+        if not validation:
+            return "none"
+        status = str(validation.get("status") or "").strip().lower()
+        if status in VALIDATION_FAIL_STATUSES:
+            return "failed"
+        if status in VALIDATION_REVIEW_STATUSES:
+            return "needs_review"
+        if status in VALIDATION_PASS_STATUSES:
+            return "passed"
+        return "neutral"
+
     def _evaluate_watchlist_candidate(
         self,
         *,
         source: dict[str, Any],
         thesis: dict[str, Any] | None,
         price: dict[str, Any],
+        validation: dict[str, Any] | None,
         as_of: date,
         held_tickers: set[str],
     ) -> dict[str, Any]:
@@ -1729,7 +1786,16 @@ class AdvisorService:
         has_exit = bool(thesis and thesis.get("has_exit_condition"))
         complete = bool(thesis and thesis.get("completeness_status") == "complete")
         close = price.get("close")
-        if source["ticker"] in held_tickers:
+        validation_signal = self._external_validation_signal(validation)
+        if validation_signal == "failed":
+            status = "risk_high"
+            status_label = "验证未通过"
+            reason = f"{source['ticker_name']} 最近外部验证未通过，当前阶段暂不买。"
+        elif validation_signal == "needs_review":
+            status = "observe"
+            status_label = "验证待复盘"
+            reason = f"{source['ticker_name']} 最近外部验证提示需要复盘，先观察并补充原因。"
+        elif source["ticker"] in held_tickers:
             status = "risk_high"
             status_label = "持仓重叠"
             reason = f"{source['ticker_name']} 已在当前持仓中，不能重复展示为新增买入候选。"
@@ -1777,6 +1843,8 @@ class AdvisorService:
                 "source_evidence": source.get("evidence") or {},
                 "thesis_id": thesis.get("thesis_id") if thesis else None,
                 "has_exit_condition": has_exit,
+                "external_validation": validation,
+                "external_validation_signal": validation_signal,
                 "as_of_date": as_of.isoformat(),
             },
             "research_only": True,
@@ -1864,6 +1932,8 @@ class AdvisorService:
         price = candidate.get("price") or {}
         evidence = candidate.get("evidence") or {}
         source_evidence = evidence.get("source_evidence") or {}
+        validation = evidence.get("external_validation") or {}
+        validation_signal = evidence.get("external_validation_signal")
         if status == "missed":
             add(
                 "chase_risk",
@@ -1883,6 +1953,20 @@ class AdvisorService:
                 "holding_overlap",
                 "与当前持仓重叠",
                 f"{ticker_name} 已在持仓中，当前阶段不作为新增买入候选。",
+                "medium",
+            )
+        if validation_signal == "failed":
+            add(
+                "external_validation_failed",
+                "外部验证未通过",
+                f"{ticker_name} 最近外部验证未通过，当前阶段暂不买。摘要：{validation.get('summary') or '-'}",
+                "high",
+            )
+        if validation_signal == "needs_review":
+            add(
+                "external_validation_needs_review",
+                "外部验证待复盘",
+                f"{ticker_name} 最近外部验证提示需要复盘，先复核策略有效性。",
                 "medium",
             )
         if price.get("suspended"):
