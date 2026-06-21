@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
+  FileText,
   Gauge,
   Languages,
   Moon,
@@ -26,6 +27,7 @@ export function Layout() {
 
   const iconByRoute = {
     "/advisor/today": Gauge,
+    "/event-records": FileText,
     "/advisor/holdings": BriefcaseBusiness,
     "/advisor/watchlist": Target,
     "/advisor/journal": ClipboardList,

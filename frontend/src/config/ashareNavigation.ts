@@ -1,5 +1,6 @@
 export const ASHARE_NAV_ITEMS = [
   { to: "/advisor/today", labelKey: "layout.advisorToday" },
+  { to: "/event-records", labelKey: "layout.hotspotRecords" },
   { to: "/advisor/holdings", labelKey: "layout.advisorHoldings" },
   { to: "/advisor/watchlist", labelKey: "layout.advisorWatchlist" },
   { to: "/advisor/journal", labelKey: "layout.advisorJournal" },
@@ -7,6 +8,7 @@ export const ASHARE_NAV_ITEMS = [
 
 export const ASHARE_NAV_LABELS_ZH = [
   "今日建议",
+  "热点记录",
   "我的持仓",
   "观察清单",
   "复盘记录",

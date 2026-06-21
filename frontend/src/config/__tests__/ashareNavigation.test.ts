@@ -11,15 +11,16 @@ describe("A-share navigation", () => {
     expect(labels).toEqual([...ASHARE_NAV_LABELS_ZH]);
     expect(ASHARE_NAV_ITEMS.map((item) => item.to)).toEqual([
       "/advisor/today",
+      "/event-records",
       "/advisor/holdings",
       "/advisor/watchlist",
       "/advisor/journal",
     ]);
   });
 
-  it("does not expose legacy research, backtest, or settings entries", () => {
+  it("keeps legacy research, backtest, or settings entries hidden", () => {
     const text = ASHARE_NAV_ITEMS.map((item) => `${item.to} ${item.labelKey}`).join(" ");
 
-    expect(text).not.toMatch(/dashboard|event|sector|strategy|backtest|risk|trade|joinquant|workflow|data|settings|agent|runtime|alpha|correlation|crypto|options|connector/i);
+    expect(text).not.toMatch(/dashboard|sector|strategy|backtest|risk|trade|joinquant|workflow|data|settings|agent|runtime|alpha|correlation|crypto|options|connector/i);
   });
 });

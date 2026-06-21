@@ -58,12 +58,13 @@ describe("Event records page", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "事件记录库" })).toBeInTheDocument();
-    expect(await screen.findByText(/AI算力 相关事件共 1 条/)).toBeInTheDocument();
-    expect(screen.getByText("事件证据链")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /原文链接/ })).toHaveAttribute("href", "https://example.com/ai");
+    expect(screen.getByRole("heading", { name: "热点记录" })).toBeInTheDocument();
+    expect(await screen.findByText(/AI算力 是近期最高频主题，共记录 1 条事实/)).toBeInTheDocument();
+    expect(screen.getByText("新闻观察员")).toBeInTheDocument();
+    expect(screen.getByText("近期动态")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /原文/ })).toHaveAttribute("href", "https://example.com/ai");
     expect(screen.getByText("事件影响沉淀")).toBeInTheDocument();
-    expect(screen.getByText("1.2%")).toBeInTheDocument();
+    expect(screen.getAllByText("1.2%").length).toBeGreaterThan(0);
     expect(apiMock.listEventRecords).toHaveBeenCalledWith({ limit: 20, min_relevance: 0.4 });
   });
 });
