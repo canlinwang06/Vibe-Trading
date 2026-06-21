@@ -624,6 +624,59 @@ def test_advisor_risk_filter_flags_holding_overlap(
     assert "holding_overlap" in rule_ids
 
 
+def test_advisor_alerts_generate_and_status_flow(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store, close=9.4)
+
+    result = service.generate_alerts(as_of_date="2026-06-22")
+    sell_alert = next(alert for alert in result["alerts"] if alert["alert_type"] == "sell_line_touched")
+
+    assert sell_alert["severity"] == "high"
+    assert sell_alert["title"] == "触及卖出线"
+    assert sell_alert["status"] == "open"
+    assert sell_alert["ticker"] == "300308.SZ"
+    assert service.list_alerts(status="open")[0]["alert_id"] == sell_alert["alert_id"]
+
+    acknowledged = service.update_alert_status(alert_id=sell_alert["alert_id"], status="acknowledged")
+    assert acknowledged["status"] == "acknowledged"
+    assert acknowledged["acknowledged_at"] is not None
+
+    closed = service.update_alert_status(alert_id=sell_alert["alert_id"], status="closed")
+    assert closed["status"] == "closed"
+    assert closed["closed_at"] is not None
+    assert service.list_alerts(status="open") == []
+
+
+def test_advisor_decision_journal_is_written_and_visible_in_snapshot(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store, close=9.4)
+    alerts = service.generate_alerts(as_of_date="2026-06-22")
+    sell_alert = next(alert for alert in alerts["alerts"] if alert["alert_type"] == "sell_line_touched")
+
+    journal = service.write_decision_journal(
+        decision_date="2026-06-22",
+        subject_type="alert",
+        subject_id=sell_alert["alert_id"],
+        ticker="300308.SZ",
+        ticker_name="中际旭创",
+        decision="accept_exit_plan",
+        user_intent="先按助手建议减仓观察。",
+        codex_explanation="价格触及硬止损线，原短线热点假设需要重新验证。",
+        review_notes="等待下一交易日验证是否继续退潮。",
+        evidence={"alert_id": sell_alert["alert_id"]},
+    )
+    snapshot = service.journal_snapshot(limit=20)
+
+    assert journal["decision"] == "accept_exit_plan"
+    assert journal["codex_explanation"].startswith("价格触及硬止损线")
+    assert snapshot["decision_journals"][0]["journal_id"] == journal["journal_id"]
+    assert any(alert["alert_id"] == sell_alert["alert_id"] for alert in snapshot["alerts"])
+
+
 def test_advisor_display_snapshots_are_page_ready(
     service: AdvisorService,
     store: AShareDataStore,
@@ -639,6 +692,8 @@ def test_advisor_display_snapshots_are_page_ready(
     assert today["title"] == "今日建议"
     assert today["summary_cards"]
     assert today["primary_actions"]
+    assert any(card["label"] == "提醒" for card in today["summary_cards"])
+    assert today["top_alerts"]
     assert holdings["title"] == "我的持仓"
     assert holdings["diagnostics"][0]["action"] == "hold"
     assert watchlist["title"] == "观察清单"
@@ -822,6 +877,45 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert risk_filters.status_code == 200
     assert risk_filters.json()["scope"] == "current_stage_risk_only"
     assert risk_filters.json()["research_only"] is True
+
+    alerts = client.post(
+        "/api/advisor/alerts/generate",
+        params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"},
+    )
+    assert alerts.status_code == 200
+    assert alerts.json()["alert_count"] >= 1
+    alert_id = alerts.json()["alerts"][0]["alert_id"]
+
+    listed_alerts = client.get(
+        "/api/advisor/alerts",
+        params={"portfolio_id": "cn_a_main", "status": "open"},
+    )
+    assert listed_alerts.status_code == 200
+    assert listed_alerts.json()["alerts"][0]["status"] == "open"
+
+    alert_status = client.post(
+        "/api/advisor/alerts/status",
+        json={"alert_id": alert_id, "status": "acknowledged"},
+    )
+    assert alert_status.status_code == 200
+    assert alert_status.json()["status"] == "acknowledged"
+
+    decision = client.post(
+        "/api/advisor/decision-journal",
+        json={
+            "portfolio_id": "cn_a_main",
+            "decision_date": "2026-06-21",
+            "subject_type": "alert",
+            "subject_id": alert_id,
+            "ticker": "000977.SZ",
+            "ticker_name": "浪潮信息",
+            "decision": "observe",
+            "user_intent": "先观察，不直接买入。",
+            "codex_explanation": "候选进入观察，但仍需要等下一次确认。",
+        },
+    )
+    assert decision.status_code == 200
+    assert decision.json()["decision"] == "observe"
 
     for path, title in (
         ("/api/advisor/today-snapshot", "今日建议"),

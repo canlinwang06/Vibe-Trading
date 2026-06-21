@@ -925,6 +925,7 @@ class AdvisorService:
         diagnostics = self.diagnose_holdings(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
         candidates = self.build_watchlist_candidates(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
         risks = self.build_risk_filters(portfolio_id=portfolio_id, as_of_date=as_of)
+        alerts = self.generate_alerts(portfolio_id=portfolio_id, as_of_date=as_of)
         headline = self._today_headline(diagnostics, candidates, risks)
         primary_actions = self._primary_actions(diagnostics, candidates, risks)
         snapshot = {
@@ -937,9 +938,11 @@ class AdvisorService:
                 {"label": "持仓数量", "value": summary["position_count"]},
                 {"label": "候选数量", "value": candidates["candidate_count"]},
                 {"label": "暂不买风险", "value": risks["item_count"]},
+                {"label": "提醒", "value": alerts["alert_count"]},
                 {"label": "总盈亏", "value": summary["total_pnl"]},
             ],
             "primary_actions": primary_actions,
+            "top_alerts": alerts["alerts"][:5],
             "holding_action_counts": diagnostics["action_counts"],
             "candidate_status_counts": candidates["status_counts"],
             "risk_rule_counts": risks["rule_counts"],
@@ -1020,6 +1023,8 @@ class AdvisorService:
             commands = self._list_command_events(conn, portfolio_id, capped_limit)
             recommendations = self._list_recommendations(conn, portfolio_id, capped_limit)
             validations = self._list_external_validations(conn, portfolio_id, capped_limit)
+            alerts = self._list_alerts_from_conn(conn, ["portfolio_id = ?"], [portfolio_id, capped_limit])
+            decisions = self._list_decision_journals(conn, portfolio_id, capped_limit)
         snapshot = {
             "snapshot_type": "journal",
             "title": "复盘记录",
@@ -1028,12 +1033,191 @@ class AdvisorService:
             "commands": commands,
             "recommendations": recommendations,
             "external_validations": validations,
-            "record_count": len(commands) + len(recommendations) + len(validations),
+            "alerts": alerts,
+            "decision_journals": decisions,
+            "record_count": len(commands) + len(recommendations) + len(validations) + len(alerts) + len(decisions),
             "research_only": True,
             "live_trading": False,
         }
         self._record_snapshot(snapshot)
         return snapshot
+
+    def generate_alerts(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+    ) -> dict[str, Any]:
+        """Generate current-stage alerts from holdings, candidates, and risk filters."""
+        self.store.initialize()
+        as_of = _parse_date(as_of_date)
+        diagnostics = self.diagnose_holdings(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        candidates = self.build_watchlist_candidates(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        risks = self.build_risk_filters(portfolio_id=portfolio_id, as_of_date=as_of)
+        alert_specs: list[dict[str, Any]] = []
+        for item in diagnostics["diagnostics"]:
+            if item["action"] == "exit":
+                alert_specs.append(self._alert_spec(portfolio_id, item, as_of, "sell_line_touched", "high", "触及卖出线"))
+            elif item["action"] == "complete_thesis":
+                alert_specs.append(self._alert_spec(portfolio_id, item, as_of, "thesis_incomplete", "medium", "补充投资逻辑"))
+            elif item["action_label"] == "到期复盘":
+                alert_specs.append(self._alert_spec(portfolio_id, item, as_of, "review_due", "medium", "复盘日期到期"))
+        for item in candidates["candidates"]:
+            if item["suggested_status"] == "ready_small_probe":
+                alert_specs.append(
+                    {
+                        "portfolio_id": portfolio_id,
+                        "alert_date": as_of,
+                        "ticker": item["ticker"],
+                        "ticker_name": item["ticker_name"],
+                        "alert_type": "buy_trigger_reached",
+                        "severity": "medium",
+                        "title": "接近买入触发线",
+                        "message": item["reason"],
+                        "trigger_value": item.get("buy_trigger_price"),
+                        "source_ref": "watchlist_candidate",
+                        "evidence": item,
+                    }
+                )
+        for item in risks["do_not_buy_items"][:20]:
+            alert_specs.append(
+                {
+                    "portfolio_id": portfolio_id,
+                    "alert_date": as_of,
+                    "ticker": item["ticker"],
+                    "ticker_name": item["ticker_name"],
+                    "alert_type": item["rule_id"],
+                    "severity": item["severity"],
+                    "title": item["rule_label"],
+                    "message": item["reason"],
+                    "trigger_value": None,
+                    "source_ref": "risk_filter",
+                    "evidence": item,
+                }
+            )
+        with self.store.connect() as conn:
+            alerts = [self._upsert_alert(conn, spec) for spec in alert_specs]
+        return {
+            "status": "ok",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "alerts": alerts,
+            "alert_count": len(alerts),
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def list_alerts(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        status: str | None = "open",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        self.store.initialize()
+        filters = ["portfolio_id = ?"]
+        params: list[Any] = [portfolio_id]
+        if status:
+            filters.append("status = ?")
+            params.append(status)
+        params.append(min(max(int(limit), 1), 200))
+        with self.store.connect(read_only=True) as conn:
+            return self._list_alerts_from_conn(conn, filters, params)
+
+    def update_alert_status(self, *, alert_id: str, status: str) -> dict[str, Any]:
+        self.store.initialize()
+        clean_status = status.strip().lower()
+        if clean_status not in {"open", "acknowledged", "closed"}:
+            raise AdvisorError("提醒状态只支持 open、acknowledged、closed")
+        now = _utc_now()
+        with self.store.connect() as conn:
+            row = conn.execute("SELECT alert_id FROM advisor_alerts WHERE alert_id = ?", [alert_id]).fetchone()
+            if row is None:
+                raise AdvisorError("提醒记录不存在")
+            conn.execute(
+                """
+                UPDATE advisor_alerts
+                SET status = ?,
+                    acknowledged_at = CASE WHEN ? = 'acknowledged' THEN ? ELSE acknowledged_at END,
+                    closed_at = CASE WHEN ? = 'closed' THEN ? ELSE closed_at END
+                WHERE alert_id = ?
+                """,
+                [clean_status, clean_status, now, clean_status, now, alert_id],
+            )
+            updated = conn.execute(
+                """
+                SELECT alert_id, portfolio_id, alert_date, ticker, ticker_name, alert_type,
+                       severity, title, message, trigger_value, status, source_ref,
+                       evidence_json, created_at, acknowledged_at, closed_at
+                FROM advisor_alerts WHERE alert_id = ?
+                """,
+                [alert_id],
+            ).fetchone()
+        return self._alert_tuple_to_dict(updated)
+
+    def write_decision_journal(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        decision_date: str | date | datetime | None = None,
+        subject_type: str = "recommendation",
+        subject_id: str | None = None,
+        ticker: str | None = None,
+        ticker_name: str | None = None,
+        decision: str = "observe",
+        user_intent: str | None = None,
+        codex_explanation: str | None = None,
+        outcome: str | None = None,
+        review_notes: str | None = None,
+        evidence: dict[str, Any] | None = None,
+        created_by: str = "codex",
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        as_of = _parse_date(decision_date)
+        normalized_ticker = _normalize_ticker(ticker) if ticker else None
+        now = _utc_now()
+        journal_id = _new_id("journal", f"{portfolio_id}:{as_of.isoformat()}:{subject_type}:{subject_id}:{normalized_ticker}:{decision}")
+        with self.store.connect() as conn:
+            conn.execute("DELETE FROM decision_journal WHERE journal_id = ?", [journal_id])
+            conn.execute(
+                """
+                INSERT INTO decision_journal (
+                  journal_id, portfolio_id, decision_date, subject_type, subject_id,
+                  ticker, ticker_name, decision, user_intent, codex_explanation,
+                  outcome, review_notes, evidence_json, created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    journal_id,
+                    portfolio_id,
+                    as_of,
+                    subject_type,
+                    subject_id,
+                    normalized_ticker,
+                    ticker_name,
+                    decision,
+                    user_intent,
+                    codex_explanation,
+                    outcome,
+                    review_notes,
+                    _json_dumps(evidence or {}),
+                    created_by,
+                    now,
+                    now,
+                ],
+            )
+            row = conn.execute(
+                """
+                SELECT journal_id, portfolio_id, decision_date, subject_type, subject_id,
+                       ticker, ticker_name, decision, user_intent, codex_explanation,
+                       outcome, review_notes, evidence_json, created_by, created_at, updated_at
+                FROM decision_journal
+                WHERE journal_id = ?
+                """,
+                [journal_id],
+            ).fetchone()
+        return self._journal_tuple_to_dict(row)
 
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
@@ -1837,6 +2021,153 @@ class AdvisorService:
             }
             for row in rows
         ]
+
+    def _alert_spec(
+        self,
+        portfolio_id: str,
+        diagnostic: dict[str, Any],
+        as_of: date,
+        alert_type: str,
+        severity: str,
+        title: str,
+    ) -> dict[str, Any]:
+        return {
+            "portfolio_id": portfolio_id,
+            "alert_date": as_of,
+            "ticker": diagnostic["ticker"],
+            "ticker_name": diagnostic["ticker_name"],
+            "alert_type": alert_type,
+            "severity": severity,
+            "title": title,
+            "message": diagnostic["reason"],
+            "trigger_value": diagnostic.get("current_price"),
+            "source_ref": "holding_diagnosis",
+            "evidence": diagnostic,
+        }
+
+    def _upsert_alert(self, conn: Any, spec: dict[str, Any]) -> dict[str, Any]:
+        alert_id = _new_id(
+            "alert",
+            f"{spec['portfolio_id']}:{spec['alert_date']}:{spec['ticker']}:{spec['alert_type']}",
+        )
+        created_at = _utc_now()
+        existing = conn.execute(
+            "SELECT status, acknowledged_at, closed_at FROM advisor_alerts WHERE alert_id = ?",
+            [alert_id],
+        ).fetchone()
+        status = existing[0] if existing else "open"
+        acknowledged_at = existing[1] if existing else None
+        closed_at = existing[2] if existing else None
+        conn.execute("DELETE FROM advisor_alerts WHERE alert_id = ?", [alert_id])
+        conn.execute(
+            """
+            INSERT INTO advisor_alerts (
+              alert_id, portfolio_id, alert_date, ticker, ticker_name, alert_type,
+              severity, title, message, trigger_value, status, source_ref,
+              evidence_json, created_at, acknowledged_at, closed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                alert_id,
+                spec["portfolio_id"],
+                spec["alert_date"],
+                spec["ticker"],
+                spec["ticker_name"],
+                spec["alert_type"],
+                spec["severity"],
+                spec["title"],
+                spec["message"],
+                spec.get("trigger_value"),
+                status,
+                spec.get("source_ref"),
+                _json_dumps(spec.get("evidence") or {}),
+                created_at,
+                acknowledged_at,
+                closed_at,
+            ],
+        )
+        row = conn.execute(
+            """
+            SELECT alert_id, portfolio_id, alert_date, ticker, ticker_name, alert_type,
+                   severity, title, message, trigger_value, status, source_ref,
+                   evidence_json, created_at, acknowledged_at, closed_at
+            FROM advisor_alerts
+            WHERE alert_id = ?
+            """,
+            [alert_id],
+        ).fetchone()
+        return self._alert_tuple_to_dict(row)
+
+    def _list_alerts_from_conn(self, conn: Any, filters: list[str], params: list[Any]) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            f"""
+            SELECT alert_id, portfolio_id, alert_date, ticker, ticker_name, alert_type,
+                   severity, title, message, trigger_value, status, source_ref,
+                   evidence_json, created_at, acknowledged_at, closed_at
+            FROM advisor_alerts
+            WHERE {" AND ".join(filters)}
+            ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [self._alert_tuple_to_dict(row) for row in rows]
+
+    def _alert_tuple_to_dict(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        return {
+            "alert_id": row[0],
+            "portfolio_id": row[1],
+            "alert_date": _date_or_none(row[2]),
+            "ticker": row[3],
+            "ticker_name": row[4],
+            "alert_type": row[5],
+            "severity": row[6],
+            "title": row[7],
+            "message": row[8],
+            "trigger_value": row[9],
+            "status": row[10],
+            "source_ref": row[11],
+            "evidence": _json_loads(row[12]),
+            "created_at": _dt_or_none(row[13]),
+            "acknowledged_at": _dt_or_none(row[14]),
+            "closed_at": _dt_or_none(row[15]),
+        }
+
+    def _journal_tuple_to_dict(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        return {
+            "journal_id": row[0],
+            "portfolio_id": row[1],
+            "decision_date": _date_or_none(row[2]),
+            "subject_type": row[3],
+            "subject_id": row[4],
+            "ticker": row[5],
+            "ticker_name": row[6],
+            "decision": row[7],
+            "user_intent": row[8],
+            "codex_explanation": row[9],
+            "outcome": row[10],
+            "review_notes": row[11],
+            "evidence": _json_loads(row[12]),
+            "created_by": row[13],
+            "created_at": _dt_or_none(row[14]),
+            "updated_at": _dt_or_none(row[15]),
+        }
+
+    def _list_decision_journals(self, conn: Any, portfolio_id: str, limit: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT journal_id, portfolio_id, decision_date, subject_type, subject_id,
+                   ticker, ticker_name, decision, user_intent, codex_explanation,
+                   outcome, review_notes, evidence_json, created_by, created_at, updated_at
+            FROM decision_journal
+            WHERE portfolio_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            [portfolio_id, limit],
+        ).fetchall()
+        return [self._journal_tuple_to_dict(row) for row in rows]
 
     def _resolve_price_row(
         self,

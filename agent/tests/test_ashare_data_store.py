@@ -50,6 +50,8 @@ EXPECTED_PR03_TABLES = (
     "advisor_action_snapshots",
     "advisor_command_events",
     "external_validation_results",
+    "advisor_alerts",
+    "decision_journal",
 )
 
 
@@ -198,6 +200,12 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     )
     assert {"validation_id", "source", "metrics_json", "raw_result_json"}.issubset(
         store.table_columns("external_validation_results")
+    )
+    assert {"alert_id", "alert_type", "severity", "status", "acknowledged_at"}.issubset(
+        store.table_columns("advisor_alerts")
+    )
+    assert {"journal_id", "decision", "codex_explanation", "review_notes"}.issubset(
+        store.table_columns("decision_journal")
     )
 
 

@@ -87,6 +87,27 @@ class AdvisorWatchlistRequest(BaseModel):
     created_by: str = Field(default="codex", min_length=1, max_length=80)
 
 
+class AdvisorAlertStatusRequest(BaseModel):
+    alert_id: str = Field(..., min_length=3, max_length=160)
+    status: str = Field(..., min_length=4, max_length=20)
+
+
+class AdvisorDecisionJournalRequest(BaseModel):
+    portfolio_id: str = Field(default=DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80)
+    decision_date: str | None = Field(default=None, min_length=10, max_length=10)
+    subject_type: str = Field(default="recommendation", min_length=1, max_length=80)
+    subject_id: str | None = Field(default=None, max_length=160)
+    ticker: str | None = Field(default=None, min_length=9, max_length=9)
+    ticker_name: str | None = Field(default=None, min_length=1, max_length=80)
+    decision: str = Field(default="observe", min_length=1, max_length=80)
+    user_intent: str | None = Field(default=None, max_length=2000)
+    codex_explanation: str | None = Field(default=None, max_length=2000)
+    outcome: str | None = Field(default=None, max_length=2000)
+    review_notes: str | None = Field(default=None, max_length=2000)
+    evidence: dict[str, Any] | None = None
+    created_by: str = Field(default="codex", min_length=1, max_length=80)
+
+
 def _service() -> AdvisorService:
     return AdvisorService()
 
@@ -376,5 +397,55 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
     ) -> dict[str, Any]:
         try:
             return _service().journal_snapshot(portfolio_id=portfolio_id, limit=limit)
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/advisor/alerts/generate", dependencies=[Depends(auth)])
+    def generate_alerts(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        as_of_date: str | None = Query(None, min_length=10, max_length=10),
+    ) -> dict[str, Any]:
+        try:
+            return _service().generate_alerts(portfolio_id=portfolio_id, as_of_date=as_of_date)
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/alerts", dependencies=[Depends(auth)])
+    def list_alerts(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        status: str | None = Query("open", max_length=20),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        try:
+            alerts = _service().list_alerts(portfolio_id=portfolio_id, status=status, limit=limit)
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+        return {"portfolio_id": portfolio_id, "alerts": alerts, "alert_count": len(alerts), "research_only": True, "live_trading": False}
+
+    @app.post("/api/advisor/alerts/status", dependencies=[Depends(auth)])
+    def update_alert_status(payload: AdvisorAlertStatusRequest) -> dict[str, Any]:
+        try:
+            return _service().update_alert_status(alert_id=payload.alert_id, status=payload.status)
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/advisor/decision-journal", dependencies=[Depends(auth)])
+    def write_decision_journal(payload: AdvisorDecisionJournalRequest) -> dict[str, Any]:
+        try:
+            return _service().write_decision_journal(
+                portfolio_id=payload.portfolio_id,
+                decision_date=payload.decision_date,
+                subject_type=payload.subject_type,
+                subject_id=payload.subject_id,
+                ticker=payload.ticker,
+                ticker_name=payload.ticker_name,
+                decision=payload.decision,
+                user_intent=payload.user_intent,
+                codex_explanation=payload.codex_explanation,
+                outcome=payload.outcome,
+                review_notes=payload.review_notes,
+                evidence=payload.evidence,
+                created_by=payload.created_by,
+            )
         except AdvisorError as exc:
             raise _http_error(exc) from exc

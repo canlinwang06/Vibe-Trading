@@ -847,6 +847,52 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         )
         """,
     ),
+    TableSpec(
+        "advisor_alerts",
+        """
+        CREATE TABLE IF NOT EXISTS advisor_alerts (
+          alert_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          alert_date DATE,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          alert_type VARCHAR,
+          severity VARCHAR,
+          title VARCHAR,
+          message TEXT,
+          trigger_value DOUBLE,
+          status VARCHAR,
+          source_ref VARCHAR,
+          evidence_json TEXT,
+          created_at TIMESTAMP,
+          acknowledged_at TIMESTAMP,
+          closed_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "decision_journal",
+        """
+        CREATE TABLE IF NOT EXISTS decision_journal (
+          journal_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          decision_date DATE,
+          subject_type VARCHAR,
+          subject_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          decision VARCHAR,
+          user_intent TEXT,
+          codex_explanation TEXT,
+          outcome TEXT,
+          review_notes TEXT,
+          evidence_json TEXT,
+          created_by VARCHAR,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
 )
 
 PR03_CORE_TABLE_NAMES = tuple(table.name for table in PR03_CORE_TABLES)
