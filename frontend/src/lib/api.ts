@@ -2828,6 +2828,20 @@ export interface AdvisorRiskItem {
   reason: string;
 }
 
+export interface AdvisorExternalValidation {
+  validation_id: string;
+  source: string;
+  source_ref?: string | null;
+  subject_type: string;
+  subject_id?: string | null;
+  validation_date?: string | null;
+  status: string;
+  metrics: Record<string, unknown>;
+  summary?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+}
+
 export interface AdvisorTodaySnapshot {
   snapshot_type: "today";
   title: string;
@@ -2879,7 +2893,9 @@ export interface AdvisorJournalSnapshot {
   headline: string;
   commands: Record<string, unknown>[];
   recommendations: Record<string, unknown>[];
-  external_validations: Record<string, unknown>[];
+  external_validations: AdvisorExternalValidation[];
+  alerts?: Record<string, unknown>[];
+  decision_journals?: Record<string, unknown>[];
   record_count: number;
   research_only: boolean;
   live_trading: boolean;

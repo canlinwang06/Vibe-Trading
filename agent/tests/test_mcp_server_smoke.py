@@ -64,6 +64,7 @@ REQUIRED_TOOL_NAMES = {
     "advisor_upsert_thesis",
     "advisor_upsert_watchlist_item",
     "advisor_today_snapshot",
+    "advisor_record_external_validation",
 }
 
 

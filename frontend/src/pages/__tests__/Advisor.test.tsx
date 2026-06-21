@@ -157,8 +157,21 @@ describe("Advisor pages", () => {
           reason: "未触发退出条件。",
         },
       ],
-      external_validations: [],
-      record_count: 2,
+      external_validations: [
+        {
+          validation_id: "validation_1",
+          source: "joinquant",
+          source_ref: "jq-run-001",
+          subject_type: "strategy",
+          subject_id: "strategy_ai_compute_breakout",
+          validation_date: "2026-06-21",
+          status: "passed",
+          metrics: { annual_return: 0.18, max_drawdown: -0.08, sharpe: 1.28 },
+          summary: "聚宽模拟回测通过初筛。",
+        },
+      ],
+      decision_journals: [],
+      record_count: 3,
       research_only: true,
       live_trading: false,
     });
@@ -168,6 +181,7 @@ describe("Advisor pages", () => {
     expect(await screen.findByText("复盘记录")).toBeInTheDocument();
     expect(screen.getByText("系统建议")).toBeInTheDocument();
     expect(screen.getByText("未触发退出条件。")).toBeInTheDocument();
+    expect(screen.getByText("聚宽模拟回测通过初筛。")).toBeInTheDocument();
+    expect(screen.getByText("joinquant / strategy_ai_compute_breakout")).toBeInTheDocument();
   });
 });
-

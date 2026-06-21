@@ -677,6 +677,40 @@ def test_advisor_decision_journal_is_written_and_visible_in_snapshot(
     assert any(alert["alert_id"] == sell_alert["alert_id"] for alert in snapshot["alerts"])
 
 
+def test_advisor_external_validation_writeback_is_visible_in_journal_snapshot(
+    service: AdvisorService,
+) -> None:
+    first = service.record_external_validation(
+        source="joinquant",
+        source_ref="jq-run-ai-compute-001",
+        subject_type="strategy",
+        subject_id="strategy_ai_compute_breakout",
+        validation_date="2026-06-22",
+        status="passed",
+        metrics={"annual_return": 0.18, "max_drawdown": -0.08, "sharpe": 1.35},
+        summary="AI 算力突破策略在聚宽模拟回测中通过初筛。",
+        raw_result={"period": "2024-01-01~2026-06-22"},
+    )
+    second = service.record_external_validation(
+        source="joinquant",
+        source_ref="jq-run-ai-compute-001",
+        subject_type="strategy",
+        subject_id="strategy_ai_compute_breakout",
+        validation_date="2026-06-22",
+        status="passed",
+        metrics={"annual_return": 0.2, "max_drawdown": -0.08, "sharpe": 1.42},
+        summary="同一聚宽结果再次写回时覆盖为最新指标。",
+    )
+    validations = service.list_external_validations(subject_type="strategy")
+    snapshot = service.journal_snapshot(limit=20)
+
+    assert first["validation_id"] == second["validation_id"]
+    assert validations[0]["metrics"]["annual_return"] == 0.2
+    assert validations[0]["source"] == "joinquant"
+    assert snapshot["external_validations"][0]["validation_id"] == second["validation_id"]
+    assert "聚宽" in snapshot["external_validations"][0]["summary"]
+
+
 def test_advisor_display_snapshots_are_page_ready(
     service: AdvisorService,
     store: AShareDataStore,
@@ -916,6 +950,32 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     )
     assert decision.status_code == 200
     assert decision.json()["decision"] == "observe"
+
+    validation = client.post(
+        "/api/advisor/external-validations",
+        json={
+            "portfolio_id": "cn_a_main",
+            "source": "joinquant",
+            "source_ref": "jq-api-run-001",
+            "subject_type": "strategy",
+            "subject_id": "strategy_ai_compute_breakout",
+            "validation_date": "2026-06-21",
+            "status": "passed",
+            "metrics": {"annual_return": 0.16, "max_drawdown": -0.07, "sharpe": 1.2},
+            "summary": "聚宽模拟回测通过初筛，仍需人工复核交易成本假设。",
+        },
+    )
+    assert validation.status_code == 200
+    assert validation.json()["source"] == "joinquant"
+    assert validation.json()["metrics"]["annual_return"] == 0.16
+
+    validations = client.get(
+        "/api/advisor/external-validations",
+        params={"portfolio_id": "cn_a_main", "subject_type": "strategy"},
+    )
+    assert validations.status_code == 200
+    assert validations.json()["validation_count"] == 1
+    assert validations.json()["external_validations"][0]["status"] == "passed"
 
     for path, title in (
         ("/api/advisor/today-snapshot", "今日建议"),

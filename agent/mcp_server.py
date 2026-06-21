@@ -558,6 +558,43 @@ def advisor_today_snapshot(portfolio_id: str = "cn_a_main", as_of_date: str | No
         return _json_error(str(exc), error_type="advisor_snapshot")
 
 
+@mcp.tool
+def advisor_record_external_validation(
+    portfolio_id: str = "cn_a_main",
+    source: str = "joinquant",
+    source_ref: str | None = None,
+    subject_type: str = "strategy",
+    subject_id: str | None = None,
+    validation_date: str | None = None,
+    status: str = "completed",
+    metrics: dict[str, Any] | None = None,
+    summary: str | None = None,
+    raw_result: dict[str, Any] | None = None,
+) -> str:
+    """Record a research-only external validation result imported by Codex.
+
+    This is for writing back simulation or backtest conclusions from external
+    tools such as JoinQuant. It does not run a backtest and never places orders.
+    """
+    try:
+        result = _get_advisor_service().record_external_validation(
+            portfolio_id=portfolio_id,
+            source=source,
+            source_ref=source_ref,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            validation_date=validation_date,
+            status=status,
+            metrics=metrics or {},
+            summary=summary,
+            raw_result=raw_result or {},
+            created_by="codex_mcp",
+        )
+        return _json_ok(result=result)
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(str(exc), error_type="advisor_external_validation")
+
+
 # ---------------------------------------------------------------------------
 # Backtest tool
 # ---------------------------------------------------------------------------

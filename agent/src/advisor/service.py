@@ -1219,6 +1219,105 @@ class AdvisorService:
             ).fetchone()
         return self._journal_tuple_to_dict(row)
 
+    def record_external_validation(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        source: str = "manual",
+        source_ref: str | None = None,
+        subject_type: str = "strategy",
+        subject_id: str | None = None,
+        validation_date: str | date | datetime | None = None,
+        status: str = "completed",
+        metrics: dict[str, Any] | None = None,
+        summary: str | None = None,
+        raw_result: dict[str, Any] | None = None,
+        created_by: str = "codex",
+    ) -> dict[str, Any]:
+        """Persist a research-only validation result imported by Codex."""
+        self.store.initialize()
+        clean_source = (source or "manual").strip() or "manual"
+        clean_subject_type = (subject_type or "strategy").strip() or "strategy"
+        clean_status = (status or "completed").strip() or "completed"
+        as_of = _parse_date(validation_date)
+        validation_id = _new_id(
+            "validation",
+            f"{portfolio_id}:{clean_source}:{source_ref}:{clean_subject_type}:{subject_id}:{as_of.isoformat()}",
+        )
+        now = _utc_now()
+        with self.store.connect() as conn:
+            conn.execute("DELETE FROM external_validation_results WHERE validation_id = ?", [validation_id])
+            conn.execute(
+                """
+                INSERT INTO external_validation_results (
+                  validation_id, portfolio_id, source, source_ref, subject_type,
+                  subject_id, validation_date, status, metrics_json, summary,
+                  raw_result_json, created_by, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    validation_id,
+                    portfolio_id,
+                    clean_source,
+                    source_ref,
+                    clean_subject_type,
+                    subject_id,
+                    as_of,
+                    clean_status,
+                    _json_dumps(metrics or {}),
+                    summary,
+                    _json_dumps(raw_result or {}),
+                    created_by,
+                    now,
+                ],
+            )
+            row = conn.execute(
+                """
+                SELECT validation_id, source, source_ref, subject_type, subject_id,
+                       validation_date, status, metrics_json, summary, raw_result_json,
+                       created_by, created_at
+                FROM external_validation_results
+                WHERE validation_id = ?
+                """,
+                [validation_id],
+            ).fetchone()
+        return self._validation_tuple_to_dict(row, include_raw=True)
+
+    def list_external_validations(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Return recent external validation records for display or Codex review."""
+        self.store.initialize()
+        filters = ["portfolio_id = ?"]
+        params: list[Any] = [portfolio_id]
+        if subject_type:
+            filters.append("subject_type = ?")
+            params.append(subject_type)
+        if subject_id:
+            filters.append("subject_id = ?")
+            params.append(subject_id)
+        params.append(min(max(int(limit), 1), 200))
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT validation_id, source, source_ref, subject_type, subject_id,
+                       validation_date, status, metrics_json, summary, raw_result_json,
+                       created_by, created_at
+                FROM external_validation_results
+                WHERE {" AND ".join(filters)}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        return [self._validation_tuple_to_dict(row, include_raw=True) for row in rows]
+
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
             """
@@ -1997,7 +2096,8 @@ class AdvisorService:
         rows = conn.execute(
             """
             SELECT validation_id, source, source_ref, subject_type, subject_id,
-                   validation_date, status, metrics_json, summary, created_by, created_at
+                   validation_date, status, metrics_json, summary, raw_result_json,
+                   created_by, created_at
             FROM external_validation_results
             WHERE portfolio_id = ?
             ORDER BY created_at DESC
@@ -2005,22 +2105,25 @@ class AdvisorService:
             """,
             [portfolio_id, limit],
         ).fetchall()
-        return [
-            {
-                "validation_id": row[0],
-                "source": row[1],
-                "source_ref": row[2],
-                "subject_type": row[3],
-                "subject_id": row[4],
-                "validation_date": _date_or_none(row[5]),
-                "status": row[6],
-                "metrics": _json_loads(row[7]),
-                "summary": row[8],
-                "created_by": row[9],
-                "created_at": _dt_or_none(row[10]),
-            }
-            for row in rows
-        ]
+        return [self._validation_tuple_to_dict(row, include_raw=False) for row in rows]
+
+    def _validation_tuple_to_dict(self, row: tuple[Any, ...], *, include_raw: bool) -> dict[str, Any]:
+        result = {
+            "validation_id": row[0],
+            "source": row[1],
+            "source_ref": row[2],
+            "subject_type": row[3],
+            "subject_id": row[4],
+            "validation_date": _date_or_none(row[5]),
+            "status": row[6],
+            "metrics": _json_loads(row[7]),
+            "summary": row[8],
+            "created_by": row[10],
+            "created_at": _dt_or_none(row[11]),
+        }
+        if include_raw:
+            result["raw_result"] = _json_loads(row[9])
+        return result
 
     def _alert_spec(
         self,

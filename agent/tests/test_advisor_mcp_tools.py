@@ -60,6 +60,18 @@ def test_advisor_mcp_tools_write_local_research_ledger(
             reason="等待服务器链条确认买点。",
         )
     )
+    validation = _payload(
+        mcp_server.advisor_record_external_validation(
+            source="joinquant",
+            source_ref="jq-mcp-run-001",
+            subject_type="strategy",
+            subject_id="strategy_ai_compute_breakout",
+            validation_date="2026-06-21",
+            status="passed",
+            metrics={"annual_return": 0.18, "max_drawdown": -0.09, "sharpe": 1.28},
+            summary="聚宽模拟回测结果写回本地系统。",
+        )
+    )
     snapshot = _payload(mcp_server.advisor_today_snapshot(as_of_date="2026-06-21"))
 
     assert transaction["status"] == "ok"
@@ -68,6 +80,9 @@ def test_advisor_mcp_tools_write_local_research_ledger(
     assert thesis["result"]["completeness_status"] == "complete"
     assert watchlist["status"] == "ok"
     assert watchlist["result"]["ticker"] == "000977.SZ"
+    assert validation["status"] == "ok"
+    assert validation["result"]["source"] == "joinquant"
+    assert validation["result"]["metrics"]["sharpe"] == 1.28
     assert snapshot["status"] == "ok"
     assert snapshot["result"]["title"] == "今日建议"
     assert snapshot["result"]["research_only"] is True
@@ -88,4 +103,3 @@ def test_advisor_mcp_transaction_rejects_non_a_share(tmp_path: Path, monkeypatch
     assert result["status"] == "error"
     assert result["error_type"] == "advisor_transaction"
     assert "沪深 A 股" in result["error"]
-

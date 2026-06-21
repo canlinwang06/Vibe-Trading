@@ -15,6 +15,7 @@ import {
   type AdvisorActionItem,
   type AdvisorCandidate,
   type AdvisorDiagnostic,
+  type AdvisorExternalValidation,
   type AdvisorHoldingsSnapshot,
   type AdvisorJournalSnapshot,
   type AdvisorRiskItem,
@@ -143,7 +144,7 @@ function ResearchBadge() {
 
 function SummaryGrid({ cards }: { cards: { label: string; value: unknown }[] }) {
   return (
-    <section className="grid gap-3 md:grid-cols-4">
+    <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
       {cards.map((card) => (
         <article key={card.label} className="rounded-lg border bg-card p-4">
           <p className="text-xs text-muted-foreground">{card.label}</p>
@@ -244,6 +245,37 @@ function RiskCard({ item }: { item: AdvisorRiskItem }) {
   );
 }
 
+function ValidationCard({ item }: { item: AdvisorExternalValidation }) {
+  return (
+    <article className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{formatValue(item.summary || "外部验证结果")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatValue(item.source)} / {formatValue(item.subject_id || item.source_ref)}
+          </p>
+        </div>
+        <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.status)}</span>
+      </div>
+      <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+        <div>
+          <dt className="text-muted-foreground">年化收益</dt>
+          <dd className="mt-1 font-medium">{formatValue(item.metrics.annual_return)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">最大回撤</dt>
+          <dd className="mt-1 font-medium">{formatValue(item.metrics.max_drawdown)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">夏普</dt>
+          <dd className="mt-1 font-medium">{formatValue(item.metrics.sharpe)}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-muted-foreground">验证日期：{formatValue(item.validation_date)}</p>
+    </article>
+  );
+}
+
 export function AdvisorToday() {
   const state = useSnapshot<AdvisorTodaySnapshot>(() =>
     api.getAdvisorTodaySnapshot({ portfolio_id: PORTFOLIO_ID, as_of_date: today() }),
@@ -338,6 +370,7 @@ export function AdvisorJournal() {
             { label: "指令记录", value: data.commands.length },
             { label: "系统建议", value: data.recommendations.length },
             { label: "外部验证", value: data.external_validations.length },
+            { label: "决策复盘", value: data.decision_journals?.length ?? 0 },
             { label: "总记录", value: data.record_count },
           ]} />
           <section className="mt-5 grid gap-3 lg:grid-cols-2">
@@ -348,6 +381,11 @@ export function AdvisorJournal() {
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">{formatValue(item.reason)}</p>
               </article>
             )) : <EmptyState text="当前没有系统建议记录。" />}
+          </section>
+          <section className="mt-5 grid gap-3 lg:grid-cols-2">
+            {data.external_validations.length ? data.external_validations.slice(0, 6).map((item) => (
+              <ValidationCard key={item.validation_id} item={item} />
+            )) : <EmptyState text="当前没有外部验证写回记录。" />}
           </section>
         </AdvisorShell>
       )}

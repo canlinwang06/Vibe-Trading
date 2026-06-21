@@ -108,6 +108,20 @@ class AdvisorDecisionJournalRequest(BaseModel):
     created_by: str = Field(default="codex", min_length=1, max_length=80)
 
 
+class AdvisorExternalValidationRequest(BaseModel):
+    portfolio_id: str = Field(default=DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80)
+    source: str = Field(default="manual", min_length=1, max_length=80)
+    source_ref: str | None = Field(default=None, max_length=200)
+    subject_type: str = Field(default="strategy", min_length=1, max_length=80)
+    subject_id: str | None = Field(default=None, max_length=160)
+    validation_date: str | None = Field(default=None, min_length=10, max_length=10)
+    status: str = Field(default="completed", min_length=1, max_length=80)
+    metrics: dict[str, Any] | None = None
+    summary: str | None = Field(default=None, max_length=4000)
+    raw_result: dict[str, Any] | None = None
+    created_by: str = Field(default="codex", min_length=1, max_length=80)
+
+
 def _service() -> AdvisorService:
     return AdvisorService()
 
@@ -449,3 +463,46 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
             )
         except AdvisorError as exc:
             raise _http_error(exc) from exc
+
+    @app.post("/api/advisor/external-validations", dependencies=[Depends(auth)])
+    def record_external_validation(payload: AdvisorExternalValidationRequest) -> dict[str, Any]:
+        try:
+            return _service().record_external_validation(
+                portfolio_id=payload.portfolio_id,
+                source=payload.source,
+                source_ref=payload.source_ref,
+                subject_type=payload.subject_type,
+                subject_id=payload.subject_id,
+                validation_date=payload.validation_date,
+                status=payload.status,
+                metrics=payload.metrics,
+                summary=payload.summary,
+                raw_result=payload.raw_result,
+                created_by=payload.created_by,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/external-validations", dependencies=[Depends(auth)])
+    def list_external_validations(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        subject_type: str | None = Query(None, max_length=80),
+        subject_id: str | None = Query(None, max_length=160),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        try:
+            validations = _service().list_external_validations(
+                portfolio_id=portfolio_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                limit=limit,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+        return {
+            "portfolio_id": portfolio_id,
+            "external_validations": validations,
+            "validation_count": len(validations),
+            "research_only": True,
+            "live_trading": False,
+        }
