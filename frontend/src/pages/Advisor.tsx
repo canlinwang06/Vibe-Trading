@@ -68,6 +68,11 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  return `${Math.round(value * 1000) / 10}%`;
+}
+
 function actionTone(action?: string): string {
   if (action === "exit" || action === "risk_high" || action === "chase_risk") return "border-destructive/40 bg-destructive/5";
   if (action === "reduce" || action === "complete_thesis" || action === "needs_exit_condition") return "border-warning/40 bg-warning/5";
@@ -224,7 +229,17 @@ function CandidateCard({ item }: { item: AdvisorCandidate }) {
         <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.buy_trigger_price)}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
-      <p className="mt-2 text-xs text-muted-foreground">买入条件：{formatValue(item.buy_trigger_condition)}</p>
+      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+        <div>
+          <dt className="text-muted-foreground">建议仓位上限</dt>
+          <dd className="mt-1 font-medium">{formatPercent(item.max_position_pct)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">观察周期</dt>
+          <dd className="mt-1 font-medium">{item.target_holding_days ? `${item.target_holding_days} 天` : "-"}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-muted-foreground">买入条件：{formatValue(item.buy_trigger_condition)}</p>
       <p className="mt-1 text-xs text-muted-foreground">不买条件：{formatValue(item.not_buy_conditions)}</p>
     </article>
   );
