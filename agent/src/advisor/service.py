@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import uuid
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -76,6 +77,19 @@ def _date_or_none(value: Any) -> str | None:
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
+
+
+def _parse_optional_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        return None
 
 
 def _dt_or_none(value: Any) -> str | None:
@@ -660,6 +674,65 @@ class AdvisorService:
         result["include_watchlist"] = include_watchlist
         return result
 
+    def diagnose_holdings(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+        stale_after_days: int = 5,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        """Generate research-only next-action diagnostics for open holdings."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        as_of = _parse_date(as_of_date)
+        max_stale_days = max(int(stale_after_days), 1)
+        with self.store.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT position_id, portfolio_id, ticker, ticker_name, sector_id, sector_name,
+                       strategy_type, strategy_cycle, total_quantity, available_quantity,
+                       average_cost, invested_cost, realized_pnl, last_price, market_value,
+                       unrealized_pnl, status, first_buy_date, last_trade_date, thesis_id,
+                       stop_loss_price, take_profit_price, next_review_date, evidence_json,
+                       created_at, updated_at
+                FROM positions
+                WHERE portfolio_id = ? AND status <> 'closed'
+                ORDER BY ticker
+                """,
+                [clean_portfolio_id],
+            ).fetchall()
+            diagnostics: list[dict[str, Any]] = []
+            for row in rows:
+                position = self._position_tuple_to_dict(row)
+                thesis = self._thesis_for_position(conn, position)
+                price = self._resolve_price_row(
+                    conn,
+                    ticker=position["ticker"],
+                    as_of=as_of,
+                    stale_after_days=max_stale_days,
+                )
+                diagnostic = self._diagnose_position(
+                    position=position,
+                    thesis=thesis,
+                    price=price,
+                    as_of=as_of,
+                )
+                if persist:
+                    self._record_holding_recommendation(conn, clean_portfolio_id, diagnostic, as_of)
+                diagnostics.append(diagnostic)
+        action_counts = dict(sorted(Counter(row["action"] for row in diagnostics).items()))
+        return {
+            "status": "ok",
+            "portfolio_id": clean_portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "diagnostics": diagnostics,
+            "diagnostic_count": len(diagnostics),
+            "action_counts": action_counts,
+            "research_only": True,
+            "live_trading": False,
+        }
+
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
             """
@@ -672,6 +745,223 @@ class AdvisorService:
             [portfolio_id, ticker],
         ).fetchone()
         return str(row[0]) if row else None
+
+    def _thesis_for_position(self, conn: Any, position: dict[str, Any]) -> dict[str, Any] | None:
+        thesis_id = position.get("thesis_id") or self._latest_thesis_id(
+            conn,
+            str(position["portfolio_id"]),
+            str(position["ticker"]),
+        )
+        if not thesis_id:
+            return None
+        try:
+            return self._fetch_thesis(conn, str(thesis_id))
+        except AdvisorError:
+            return None
+
+    def _diagnose_position(
+        self,
+        *,
+        position: dict[str, Any],
+        thesis: dict[str, Any] | None,
+        price: dict[str, Any],
+        as_of: date,
+    ) -> dict[str, Any]:
+        ticker = str(position["ticker"])
+        ticker_name = str(position["ticker_name"])
+        next_review = _parse_optional_date(thesis.get("next_review_date")) if thesis else None
+        fallback_review = (as_of + timedelta(days=1)).isoformat()
+        if not thesis or thesis.get("completeness_status") != "complete":
+            missing = thesis.get("missing_fields", []) if thesis else ["投资逻辑"]
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "complete_thesis",
+                "action_label": "补充投资逻辑",
+                "priority": 2,
+                "current_price": price.get("close"),
+                "price": price,
+                "sell_line": None,
+                "trigger_price_or_condition": "补齐买入原因、退出条件、最大仓位和复盘频率后再判断。",
+                "reason": f"{ticker_name} 缺少完整投资逻辑（缺少：{'、'.join(missing)}），系统不编造具体卖出价。",
+                "risk": "逻辑不完整时，无法判断下跌是正常波动还是买入假设失效。",
+                "next_review_date": fallback_review,
+                "research_only": True,
+                "live_trading": False,
+            }
+
+        stop_price = thesis.get("stop_loss_price") or position.get("stop_loss_price")
+        take_profit_price = thesis.get("take_profit_price") or position.get("take_profit_price")
+        sell_line = {
+            "hard_stop_price": stop_price,
+            "take_profit_price": take_profit_price,
+            "logic_exit_conditions": thesis.get("exit_conditions") or thesis.get("invalidation_conditions"),
+            "invalidation_conditions": thesis.get("invalidation_conditions"),
+            "review_date": thesis.get("next_review_date"),
+        }
+        strategy_label = thesis.get("strategy_type_label") or thesis.get("strategy_type") or "当前策略"
+        current_price = price.get("close")
+        if price.get("freshness_status") in {"missing", "stale"}:
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "observe",
+                "action_label": "谨慎观察",
+                "priority": 3,
+                "current_price": current_price,
+                "price": price,
+                "sell_line": sell_line,
+                "trigger_price_or_condition": price.get("freshness_reason"),
+                "reason": f"{ticker_name} 的行情数据不新，暂不依据价格触发{strategy_label}的卖出或减仓判断。",
+                "risk": price.get("freshness_reason"),
+                "next_review_date": (next_review or as_of + timedelta(days=1)).isoformat(),
+                "research_only": True,
+                "live_trading": False,
+            }
+        if price.get("suspended"):
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "observe",
+                "action_label": "停牌观察",
+                "priority": 3,
+                "current_price": current_price,
+                "price": price,
+                "sell_line": sell_line,
+                "trigger_price_or_condition": "停牌期间不依据价格触发交易动作。",
+                "reason": f"{ticker_name} 最新行情标记为停牌，先观察{strategy_label}的逻辑是否仍成立。",
+                "risk": "停牌期间价格不可交易，需等待复牌后重新评估。",
+                "next_review_date": (next_review or as_of + timedelta(days=1)).isoformat(),
+                "research_only": True,
+                "live_trading": False,
+            }
+        if current_price is not None and stop_price is not None and float(current_price) <= float(stop_price):
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "exit",
+                "action_label": "触发退出",
+                "priority": 1,
+                "current_price": current_price,
+                "price": price,
+                "sell_line": sell_line,
+                "trigger_price_or_condition": f"当前价 {float(current_price):.2f} <= 硬止损价 {float(stop_price):.2f}",
+                "reason": f"{ticker_name} 已触及{strategy_label}预设硬止损价，属于风险条件触发，不只是简单下跌。",
+                "risk": thesis.get("invalidation_conditions") or "价格跌破硬止损线，原买入假设需要判定失效。",
+                "next_review_date": as_of.isoformat(),
+                "research_only": True,
+                "live_trading": False,
+            }
+        if current_price is not None and take_profit_price is not None and float(current_price) >= float(take_profit_price):
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "reduce",
+                "action_label": "考虑减仓",
+                "priority": 2,
+                "current_price": current_price,
+                "price": price,
+                "sell_line": sell_line,
+                "trigger_price_or_condition": f"当前价 {float(current_price):.2f} >= 阶段止盈线 {float(take_profit_price):.2f}",
+                "reason": f"{ticker_name} 达到{strategy_label}阶段兑现线，可考虑降低波动暴露并保留观察。",
+                "risk": "达到收益目标后继续持有，需要确认板块热度和原投资逻辑仍然有效。",
+                "next_review_date": (next_review or as_of + timedelta(days=1)).isoformat(),
+                "research_only": True,
+                "live_trading": False,
+            }
+        if next_review is not None and next_review <= as_of:
+            return {
+                "position_id": position["position_id"],
+                "ticker": ticker,
+                "ticker_name": ticker_name,
+                "action": "observe",
+                "action_label": "到期复盘",
+                "priority": 3,
+                "current_price": current_price,
+                "price": price,
+                "sell_line": sell_line,
+                "trigger_price_or_condition": f"复盘日期 {next_review.isoformat()} 已到，需要检查退出条件。",
+                "reason": f"{ticker_name} 尚未触发价格卖出线，但{strategy_label}已到复盘窗口，应确认逻辑是否延续。",
+                "risk": thesis.get("exit_conditions") or "持有周期到期后继续持有会增加策略漂移风险。",
+                "next_review_date": next_review.isoformat(),
+                "research_only": True,
+                "live_trading": False,
+            }
+        return {
+            "position_id": position["position_id"],
+            "ticker": ticker,
+            "ticker_name": ticker_name,
+            "action": "hold",
+            "action_label": "继续持有",
+            "priority": 4,
+            "current_price": current_price,
+            "price": price,
+            "sell_line": sell_line,
+            "trigger_price_or_condition": thesis.get("exit_conditions") or thesis.get("invalidation_conditions"),
+            "reason": f"{ticker_name} 未触发{strategy_label}的硬止损、减仓线或复盘退出条件，当前建议继续持有并观察。",
+            "risk": thesis.get("not_buy_conditions") or "继续持有期间需要关注板块退潮和投资逻辑失效。",
+            "next_review_date": (next_review or as_of + timedelta(days=3)).isoformat(),
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def _record_holding_recommendation(
+        self,
+        conn: Any,
+        portfolio_id: str,
+        diagnostic: dict[str, Any],
+        as_of: date,
+    ) -> None:
+        recommendation_id = _new_id(
+            "rec",
+            f"{portfolio_id}:{diagnostic['ticker']}:{as_of.isoformat()}:holding_diagnosis",
+        )
+        conn.execute(
+            "DELETE FROM advisor_action_recommendations WHERE recommendation_id = ?",
+            [recommendation_id],
+        )
+        conn.execute(
+            """
+            INSERT INTO advisor_action_recommendations (
+              recommendation_id, portfolio_id, as_of_date, action_type, action_label,
+              ticker, ticker_name, priority, confidence, target_price, stop_loss_price,
+              take_profit_price, max_position_pct, expected_holding_days, reason,
+              evidence_json, data_as_of, data_freshness, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 'active', ?)
+            """,
+            [
+                recommendation_id,
+                portfolio_id,
+                as_of,
+                diagnostic["action"],
+                diagnostic["action_label"],
+                diagnostic["ticker"],
+                diagnostic["ticker_name"],
+                diagnostic["priority"],
+                0.72 if diagnostic["action"] in {"hold", "observe"} else 0.66,
+                diagnostic["current_price"],
+                (diagnostic.get("sell_line") or {}).get("hard_stop_price"),
+                (diagnostic.get("sell_line") or {}).get("take_profit_price"),
+                diagnostic["reason"],
+                _json_dumps(
+                    {
+                        "price": diagnostic.get("price"),
+                        "sell_line": diagnostic.get("sell_line"),
+                        "risk": diagnostic.get("risk"),
+                        "trigger": diagnostic.get("trigger_price_or_condition"),
+                    }
+                ),
+                _parse_optional_date(diagnostic.get("price", {}).get("data_date")),
+                diagnostic.get("price", {}).get("freshness_status"),
+                _utc_now(),
+            ],
+        )
 
     def _resolve_price_row(
         self,

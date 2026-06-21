@@ -300,6 +300,131 @@ def test_advisor_price_resolver_degrades_when_data_missing(service: AdvisorServi
     assert "缺少可用行情数据" in price["freshness_reason"]
 
 
+def _seed_complete_holding(
+    service: AdvisorService,
+    store: AShareDataStore,
+    *,
+    ticker: str = "300308.SZ",
+    ticker_name: str = "中际旭创",
+    close: float = 10.8,
+    price_date: date = date(2026, 6, 22),
+    stop_loss_price: float = 9.5,
+    take_profit_price: float = 12.8,
+) -> None:
+    service.record_transaction(
+        ticker=ticker,
+        ticker_name=ticker_name,
+        action="buy",
+        price=10.2,
+        quantity=300,
+        trade_date="2026-06-21",
+        idempotency_key=f"buy-{ticker}-diagnosis",
+    )
+    _seed_market_price(
+        store,
+        ticker=ticker,
+        ticker_name=ticker_name,
+        trade_date=price_date,
+        close=close,
+    )
+    service.upsert_thesis(
+        ticker=ticker,
+        ticker_name=ticker_name,
+        strategy_type="短期热点趋势",
+        strategy_cycle="short",
+        thesis="AI 算力热点扩散，光模块龙头具备弹性。",
+        buy_reason="板块热度上升且个股处于观察区间。",
+        entry_conditions="放量站上 10 日线且板块热度维持高位。",
+        exit_conditions="跌破 20 日线或板块热度连续两日退潮。",
+        not_buy_conditions="高开超过 7% 或成交额明显缩量不买。",
+        stop_loss_price=stop_loss_price,
+        take_profit_price=take_profit_price,
+        max_position_pct=0.12,
+        target_holding_days=10,
+        review_frequency_days=3,
+        as_of_date="2026-06-21",
+    )
+
+
+def test_advisor_holding_diagnosis_outputs_hold_and_sell_line(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store)
+
+    result = service.diagnose_holdings(as_of_date="2026-06-22")
+    diagnostic = result["diagnostics"][0]
+
+    assert diagnostic["action"] == "hold"
+    assert diagnostic["action_label"] == "继续持有"
+    assert diagnostic["sell_line"]["hard_stop_price"] == 9.5
+    assert diagnostic["sell_line"]["take_profit_price"] == 12.8
+    assert "硬止损" in diagnostic["reason"]
+    assert diagnostic["research_only"] is True
+    with store.connect(read_only=True) as conn:
+        saved = conn.execute("SELECT action_type FROM advisor_action_recommendations").fetchone()
+    assert saved[0] == "hold"
+
+
+def test_advisor_holding_diagnosis_triggers_exit_on_hard_stop(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store, close=9.4)
+
+    result = service.diagnose_holdings(as_of_date="2026-06-22")
+    diagnostic = result["diagnostics"][0]
+
+    assert diagnostic["action"] == "exit"
+    assert diagnostic["action_label"] == "触发退出"
+    assert "硬止损价" in diagnostic["trigger_price_or_condition"]
+    assert "不只是简单下跌" in diagnostic["reason"]
+
+
+def test_advisor_holding_diagnosis_requires_thesis_before_specific_sell_price(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    service.record_transaction(
+        ticker="601138.SH",
+        ticker_name="工业富联",
+        action="buy",
+        price=25.0,
+        quantity=100,
+        trade_date="2026-06-21",
+        idempotency_key="buy-601138-no-thesis",
+    )
+    _seed_market_price(
+        store,
+        ticker="601138.SH",
+        ticker_name="工业富联",
+        trade_date=date(2026, 6, 22),
+        close=26.0,
+    )
+
+    result = service.diagnose_holdings(as_of_date="2026-06-22")
+    diagnostic = result["diagnostics"][0]
+
+    assert diagnostic["action"] == "complete_thesis"
+    assert diagnostic["sell_line"] is None
+    assert "不编造具体卖出价" in diagnostic["reason"]
+
+
+def test_advisor_holding_diagnosis_is_cautious_with_stale_price(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store, close=10.8, price_date=date(2026, 6, 1))
+
+    result = service.diagnose_holdings(as_of_date="2026-06-22", stale_after_days=5)
+    diagnostic = result["diagnostics"][0]
+
+    assert diagnostic["action"] == "observe"
+    assert diagnostic["action_label"] == "谨慎观察"
+    assert diagnostic["price"]["freshness_status"] == "stale"
+    assert "行情数据不新" in diagnostic["reason"]
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -402,5 +527,15 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert theses.status_code == 200
     assert theses.json()["thesis_count"] == 1
     assert theses.json()["theses"][0]["can_enter_ready_to_buy"] is True
+
+    diagnostics = client.get(
+        "/api/advisor/holding-diagnostics",
+        params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"},
+    )
+    assert diagnostics.status_code == 200
+    assert diagnostics.json()["diagnostic_count"] == 1
+    assert diagnostics.json()["diagnostics"][0]["action"] == "hold"
+    assert diagnostics.json()["research_only"] is True
+    assert diagnostics.json()["live_trading"] is False
 
     assert client.post("/api/advisor/place-order", json={}).status_code == 404
