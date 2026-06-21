@@ -164,12 +164,27 @@ export const api = {
     const qs = q.toString();
     return request<AdvisorWatchlistSnapshot>(`/api/advisor/watchlist-snapshot${qs ? `?${qs}` : ""}`);
   },
+  getAdvisorStocksSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorStocksSnapshot>(`/api/advisor/stocks-snapshot${qs ? `?${qs}` : ""}`);
+  },
   getAdvisorJournalSnapshot: (params: AdvisorSnapshotQuery = {}) => {
     const q = new URLSearchParams();
     if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
     if (params.limit !== undefined) q.set("limit", String(params.limit));
     const qs = q.toString();
     return request<AdvisorJournalSnapshot>(`/api/advisor/journal-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorMemorySnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_limit !== undefined) q.set("event_limit", String(params.event_limit));
+    const qs = q.toString();
+    return request<AdvisorMemorySnapshot>(`/api/advisor/memory-snapshot${qs ? `?${qs}` : ""}`);
   },
   getDailyIntelligence: (params: DailyIntelligenceQuery = {}) => {
     const q = new URLSearchParams();
@@ -2774,6 +2789,7 @@ export interface AdvisorSnapshotQuery {
   portfolio_id?: string;
   as_of_date?: string;
   limit?: number;
+  event_limit?: number;
 }
 
 export interface AdvisorSummaryCard {
@@ -2891,6 +2907,25 @@ export interface AdvisorWatchlistSnapshot {
   live_trading: boolean;
 }
 
+export interface AdvisorStocksSnapshot {
+  snapshot_type: "stocks";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  summary_cards: AdvisorSummaryCard[];
+  portfolio_summary: Record<string, unknown>;
+  holdings: AdvisorDiagnostic[];
+  watchlist: AdvisorCandidate[];
+  do_not_buy_items: AdvisorRiskItem[];
+  prices: Record<string, unknown>[];
+  action_counts: Record<string, number>;
+  status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
 export interface AdvisorJournalSnapshot {
   snapshot_type: "journal";
   title: string;
@@ -2902,6 +2937,25 @@ export interface AdvisorJournalSnapshot {
   alerts?: Record<string, unknown>[];
   decision_journals?: Record<string, unknown>[];
   record_count: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorMemorySnapshot {
+  snapshot_type: "memory";
+  title: string;
+  portfolio_id: string;
+  headline: string;
+  events: EventRecord[];
+  event_count: number;
+  event_error?: string | null;
+  commands: Record<string, unknown>[];
+  recommendations: Record<string, unknown>[];
+  external_validations: AdvisorExternalValidation[];
+  alerts?: Record<string, unknown>[];
+  decision_journals?: Record<string, unknown>[];
+  record_count: number;
+  summary_cards: AdvisorSummaryCard[];
   research_only: boolean;
   live_trading: boolean;
 }

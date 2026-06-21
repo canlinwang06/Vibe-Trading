@@ -5,7 +5,9 @@
   "layout": {
     "productName": "投资助手",
     "dashboard": "A 股驾驶舱",
-    "advisorToday": "今日建议",
+    "advisorToday": "今日助手",
+    "advisorStocks": "我的股票池",
+    "advisorMemory": "市场记忆",
     "hotspotRecords": "热点记录",
     "advisorHoldings": "我的持仓",
     "advisorWatchlist": "观察清单",

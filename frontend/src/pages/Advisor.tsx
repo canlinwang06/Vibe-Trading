@@ -4,7 +4,9 @@ import {
   BookOpenCheck,
   BriefcaseBusiness,
   CircleAlert,
+  ExternalLink,
   Eye,
+  History,
   Loader2,
   ShieldCheck,
   Target,
@@ -18,9 +20,12 @@ import {
   type AdvisorExternalValidation,
   type AdvisorHoldingsSnapshot,
   type AdvisorJournalSnapshot,
+  type AdvisorMemorySnapshot,
   type AdvisorRiskItem,
+  type AdvisorStocksSnapshot,
   type AdvisorTodaySnapshot,
   type AdvisorWatchlistSnapshot,
+  type EventRecord,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -309,6 +314,64 @@ function ValidationCard({ item }: { item: AdvisorExternalValidation }) {
   );
 }
 
+function EventMemoryCard({ item }: { item: EventRecord }) {
+  const sectors = item.related_sectors?.slice(0, 3).map((sector) => sector.sector_name).join(" / ");
+  const stocks = item.related_stocks?.slice(0, 3).map((stock) => `${stock.ticker_name || stock.ticker}`).join(" / ");
+  return (
+    <article className="rounded-lg border bg-card p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold">{item.summary}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatValue(item.source_name || item.source_type)} / {formatValue(item.knowable_time?.slice(0, 10))}
+          </p>
+        </div>
+        <span className="w-fit rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.event_subtype || item.event_type)}</span>
+      </div>
+      <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+        <div>
+          <dt className="text-muted-foreground">相关板块</dt>
+          <dd className="mt-1 font-medium">{sectors || "-"}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">相关股票</dt>
+          <dd className="mt-1 font-medium">{stocks || "-"}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">相关度</dt>
+          <dd className="mt-1 font-medium">{formatPercent(item.a_share_relevance_score)}</dd>
+        </div>
+      </dl>
+      {item.source_url ? (
+        <a
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          href={item.source_url}
+          rel="noreferrer"
+          target="_blank"
+        >
+          查看原始链接
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+    </article>
+  );
+}
+
+function RecommendationCard({ item }: { item: Record<string, unknown> }) {
+  return (
+    <article className="rounded-lg border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">{formatValue(item.action_label || item.action_type || "系统建议")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{formatValue(item.ticker_name)} / {formatValue(item.ticker)}</p>
+        </div>
+        {item.created_at ? <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.created_at).slice(0, 10)}</span> : null}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{formatValue(item.reason || item.summary)}</p>
+    </article>
+  );
+}
+
 export function AdvisorToday() {
   const state = useSnapshot<AdvisorTodaySnapshot>(() =>
     api.getAdvisorTodaySnapshot({ portfolio_id: PORTFOLIO_ID, as_of_date: today() }),
@@ -323,6 +386,55 @@ export function AdvisorToday() {
             {data.primary_actions.length ? data.primary_actions.map((item, index) => (
               <ActionCard key={`${item.type}-${item.ticker}-${index}`} item={item} />
             )) : <EmptyState text="当前没有需要优先处理的行动。" />}
+          </section>
+        </AdvisorShell>
+      )}
+    </PageState>
+  );
+}
+
+export function AdvisorStocks() {
+  const state = useSnapshot<AdvisorStocksSnapshot>(() =>
+    api.getAdvisorStocksSnapshot({ portfolio_id: PORTFOLIO_ID, as_of_date: today() }),
+  );
+  return (
+    <PageState state={state}>
+      {(data) => (
+        <AdvisorShell title={data.title} headline={data.headline} eyebrow="股票池看护" icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}>
+          <div className="mb-4"><ResearchBadge /></div>
+          <SummaryGrid cards={data.summary_cards} />
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <BriefcaseBusiness className="h-4 w-4 text-primary" />
+              已持仓：什么时候继续持有，什么时候退出
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.holdings.length ? data.holdings.map((item) => (
+                <DiagnosticCard key={item.ticker} item={item} />
+              )) : <EmptyState text="当前没有持仓记录。你通过 Codex 告诉我买入事实后，这里会开始看护。" />}
+            </div>
+          </section>
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <Eye className="h-4 w-4 text-primary" />
+              观察中：到什么价位、什么条件才考虑买
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.watchlist.length ? data.watchlist.map((item) => (
+                <CandidateCard key={item.ticker} item={item} />
+              )) : <EmptyState text="当前没有观察候选。" />}
+            </div>
+          </section>
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <CircleAlert className="h-4 w-4 text-warning" />
+              暂不买：当前阶段需要避开的条件
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.do_not_buy_items.length ? data.do_not_buy_items.map((item, index) => (
+                <RiskCard key={`${item.ticker}-${item.rule_id}-${index}`} item={item} />
+              )) : <EmptyState text="当前没有进入暂不买清单的候选。" />}
+            </div>
           </section>
         </AdvisorShell>
       )}
@@ -348,6 +460,52 @@ export function AdvisorHoldings() {
             {data.diagnostics.length ? data.diagnostics.map((item) => (
               <DiagnosticCard key={item.ticker} item={item} />
             )) : <EmptyState text="当前没有持仓记录。" />}
+          </section>
+        </AdvisorShell>
+      )}
+    </PageState>
+  );
+}
+
+export function AdvisorMemory() {
+  const state = useSnapshot<AdvisorMemorySnapshot>(() =>
+    api.getAdvisorMemorySnapshot({ portfolio_id: PORTFOLIO_ID, limit: 50, event_limit: 50 }),
+  );
+  return (
+    <PageState state={state}>
+      {(data) => (
+        <AdvisorShell title={data.title} headline={data.headline} eyebrow="事实与复盘" icon={<History className="h-3.5 w-3.5" />}>
+          <div className="mb-4"><ResearchBadge /></div>
+          <SummaryGrid cards={data.summary_cards} />
+          {data.event_error ? (
+            <div className="mt-4 rounded-lg border border-warning/40 bg-warning/5 p-4 text-sm text-muted-foreground">
+              热点事实读取不完整：{data.event_error}
+            </div>
+          ) : null}
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <BookOpenCheck className="h-4 w-4 text-primary" />
+              热点事实：发生了什么
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.events.length ? data.events.slice(0, 8).map((item) => (
+                <EventMemoryCard key={item.event_id} item={item} />
+              )) : <EmptyState text="当前没有可展示的热点事实。" />}
+            </div>
+          </section>
+          <section className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <Target className="h-4 w-4 text-primary" />
+              系统判断与外部验证：后来证明得怎么样
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {data.recommendations.length ? data.recommendations.slice(0, 6).map((item, index) => (
+                <RecommendationCard key={String(item.recommendation_id || index)} item={item} />
+              )) : <EmptyState text="当前没有系统建议记录。" />}
+              {data.external_validations.length ? data.external_validations.slice(0, 6).map((item) => (
+                <ValidationCard key={item.validation_id} item={item} />
+              )) : <EmptyState text="当前没有外部验证写回记录。" />}
+            </div>
           </section>
         </AdvisorShell>
       )}

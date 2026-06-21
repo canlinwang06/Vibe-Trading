@@ -18,6 +18,8 @@ const PROXY_PATHS = [
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = process.env.VITE_API_URL || env.VITE_API_URL || "http://127.0.0.1:8899";
+  const appBase = process.env.VITE_BASE_PATH || env.VITE_BASE_PATH || "/";
+  const normalizedBase = appBase.endsWith("/") ? appBase : `${appBase}/`;
   const apiProxy = { target: apiTarget, changeOrigin: true };
   const apiProxyWithHtmlFallback = {
     ...apiProxy,
@@ -29,6 +31,7 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
+    base: normalizedBase,
     plugins: [react()],
     resolve: {
       alias: { "@": path.resolve(__dirname, "./src") },

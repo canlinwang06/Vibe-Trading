@@ -4,6 +4,10 @@
 FROM node:20-slim AS frontend-build
 
 WORKDIR /app/frontend
+ARG VITE_BASE_PATH=/
+ARG VITE_VIBE_CLOUD_THREE_PAGE=0
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+ENV VITE_VIBE_CLOUD_THREE_PAGE=${VITE_VIBE_CLOUD_THREE_PAGE}
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY frontend/ ./

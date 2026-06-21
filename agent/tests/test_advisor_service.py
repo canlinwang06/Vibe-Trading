@@ -770,7 +770,7 @@ def test_advisor_display_snapshots_are_page_ready(
     watchlist = service.watchlist_snapshot(as_of_date="2026-06-22")
     journal = service.journal_snapshot()
 
-    assert today["title"] == "今日建议"
+    assert today["title"] == "今日助手"
     assert today["summary_cards"]
     assert today["primary_actions"]
     assert any(card["label"] == "提醒" for card in today["summary_cards"])
@@ -785,6 +785,40 @@ def test_advisor_display_snapshots_are_page_ready(
     with store.connect(read_only=True) as conn:
         snapshot_count = conn.execute("SELECT COUNT(*) FROM advisor_action_snapshots").fetchone()[0]
     assert snapshot_count == 4
+
+
+def test_advisor_cloud_snapshots_merge_stock_pool_and_market_memory(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store)
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+
+    service.record_external_validation(
+        source="joinquant",
+        source_ref="jq-cloud-001",
+        subject_type="strategy",
+        subject_id="strategy_ai_compute_breakout",
+        validation_date="2026-06-22",
+        status="passed",
+        metrics={"annual_return": 0.16, "max_drawdown": -0.07},
+        summary="聚宽模拟回测通过初筛。",
+    )
+
+    stocks = service.stocks_snapshot(as_of_date="2026-06-22")
+    memory = service.memory_snapshot(limit=20, event_limit=20)
+
+    assert stocks["title"] == "我的股票池"
+    assert stocks["holdings"][0]["ticker"] == "300308.SZ"
+    assert stocks["watchlist"][0]["ticker"] == "000977.SZ"
+    assert stocks["summary_cards"]
+    assert stocks["research_only"] is True
+    assert stocks["live_trading"] is False
+    assert memory["title"] == "市场记忆"
+    assert memory["external_validations"][0]["source"] == "joinquant"
+    assert memory["summary_cards"]
+    assert memory["research_only"] is True
+    assert memory["live_trading"] is False
 
 
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
@@ -1025,10 +1059,12 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert validations.json()["external_validations"][0]["status"] == "passed"
 
     for path, title in (
-        ("/api/advisor/today-snapshot", "今日建议"),
+        ("/api/advisor/today-snapshot", "今日助手"),
         ("/api/advisor/holdings-snapshot", "我的持仓"),
         ("/api/advisor/watchlist-snapshot", "观察清单"),
+        ("/api/advisor/stocks-snapshot", "我的股票池"),
         ("/api/advisor/journal-snapshot", "复盘记录"),
+        ("/api/advisor/memory-snapshot", "市场记忆"),
     ):
         snapshot = client.get(path, params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"})
         assert snapshot.status_code == 200

@@ -6,12 +6,10 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
-  FileText,
   Gauge,
   Languages,
   Moon,
   Sun,
-  Target,
 } from "lucide-react";
 import { ASHARE_NAV_ITEMS } from "@/config/ashareNavigation";
 import { cn } from "@/lib/utils";
@@ -27,10 +25,8 @@ export function Layout() {
 
   const iconByRoute = {
     "/advisor/today": Gauge,
-    "/event-records": FileText,
-    "/advisor/holdings": BriefcaseBusiness,
-    "/advisor/watchlist": Target,
-    "/advisor/journal": ClipboardList,
+    "/advisor/stocks": BriefcaseBusiness,
+    "/advisor/memory": ClipboardList,
   };
   const { pathname } = useLocation();
   const { dark, toggle } = useDarkMode();

@@ -11,10 +11,8 @@ describe("A-share navigation", () => {
     expect(labels).toEqual([...ASHARE_NAV_LABELS_ZH]);
     expect(ASHARE_NAV_ITEMS.map((item) => item.to)).toEqual([
       "/advisor/today",
-      "/event-records",
-      "/advisor/holdings",
-      "/advisor/watchlist",
-      "/advisor/journal",
+      "/advisor/stocks",
+      "/advisor/memory",
     ]);
   });
 

@@ -84,7 +84,7 @@ def test_advisor_mcp_tools_write_local_research_ledger(
     assert validation["result"]["source"] == "joinquant"
     assert validation["result"]["metrics"]["sharpe"] == 1.28
     assert snapshot["status"] == "ok"
-    assert snapshot["result"]["title"] == "今日建议"
+    assert snapshot["result"]["title"] == "今日助手"
     assert snapshot["result"]["research_only"] is True
 
 

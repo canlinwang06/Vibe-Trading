@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from src.ashare_data.store import AShareDataStore
+from src.event_records.service import EventRecordService
 from src.market_policy import is_a_share_code, normalize_a_share_code
 
 
@@ -940,7 +941,7 @@ class AdvisorService:
         primary_actions = self._primary_actions(diagnostics, candidates, risks)
         snapshot = {
             "snapshot_type": "today",
-            "title": "今日建议",
+            "title": "今日助手",
             "portfolio_id": portfolio_id,
             "as_of_date": as_of.isoformat(),
             "headline": headline,
@@ -1014,6 +1015,89 @@ class AdvisorService:
             "do_not_buy_items": risks["do_not_buy_items"],
             "status_counts": candidates["status_counts"],
             "risk_rule_counts": risks["rule_counts"],
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
+    def stocks_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return the cloud-facing unified stock care snapshot."""
+        holdings = self.holdings_snapshot(portfolio_id=portfolio_id, as_of_date=as_of_date)
+        watchlist = self.watchlist_snapshot(portfolio_id=portfolio_id, as_of_date=as_of_date)
+        portfolio_summary = holdings["portfolio_summary"]
+        candidates = watchlist["candidates"]
+        do_not_buy_items = watchlist["do_not_buy_items"]
+        snapshot = {
+            "snapshot_type": "stocks",
+            "title": "我的股票池",
+            "portfolio_id": holdings["portfolio_id"],
+            "as_of_date": holdings["as_of_date"],
+            "headline": "集中看护已买、观察、待买和暂不买股票，所有建议均为研究模拟用途。",
+            "summary_cards": [
+                {"label": "已持仓", "value": portfolio_summary.get("position_count", 0)},
+                {"label": "观察中", "value": len(candidates)},
+                {"label": "可小仓试探", "value": watchlist["status_counts"].get("ready_small_probe", 0)},
+                {"label": "暂不买", "value": len(do_not_buy_items)},
+                {"label": "总盈亏", "value": portfolio_summary.get("total_pnl", 0)},
+            ],
+            "portfolio_summary": portfolio_summary,
+            "holdings": holdings["diagnostics"],
+            "watchlist": candidates,
+            "do_not_buy_items": do_not_buy_items,
+            "prices": holdings["prices"],
+            "action_counts": holdings["action_counts"],
+            "status_counts": watchlist["status_counts"],
+            "risk_rule_counts": watchlist["risk_rule_counts"],
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
+    def memory_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        limit: int = 50,
+        event_limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return the cloud-facing market memory snapshot."""
+        capped_event_limit = min(max(int(event_limit), 1), 200)
+        journal = self.journal_snapshot(portfolio_id=portfolio_id, limit=limit)
+        event_error = None
+        try:
+            events = EventRecordService(self.store).list_records(limit=capped_event_limit)
+        except Exception:  # pragma: no cover - defensive for partial local datasets
+            events = []
+            event_error = "热点事实数据暂不可用，请在本地巡检完成后刷新。"
+
+        snapshot = {
+            "snapshot_type": "memory",
+            "title": "市场记忆",
+            "portfolio_id": portfolio_id,
+            "headline": "按事实、判断、决策和验证沉淀市场记忆，便于回看热点来源和复盘结论。",
+            "events": events,
+            "event_count": len(events),
+            "event_error": event_error,
+            "commands": journal["commands"],
+            "recommendations": journal["recommendations"],
+            "external_validations": journal["external_validations"],
+            "alerts": journal.get("alerts", []),
+            "decision_journals": journal.get("decision_journals", []),
+            "record_count": journal["record_count"] + len(events),
+            "summary_cards": [
+                {"label": "热点事实", "value": len(events)},
+                {"label": "系统建议", "value": len(journal["recommendations"])},
+                {"label": "外部验证", "value": len(journal["external_validations"])},
+                {"label": "决策复盘", "value": len(journal.get("decision_journals", []))},
+                {"label": "总记录", "value": journal["record_count"] + len(events)},
+            ],
             "research_only": True,
             "live_trading": False,
         }

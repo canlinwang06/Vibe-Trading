@@ -66,6 +66,12 @@ const DataSources = lazy(() =>
 const AdvisorToday = lazy(() =>
   import("@/pages/Advisor").then((m) => ({ default: m.AdvisorToday })),
 );
+const AdvisorStocks = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorStocks })),
+);
+const AdvisorMemory = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorMemory })),
+);
 const AdvisorHoldings = lazy(() =>
   import("@/pages/Advisor").then((m) => ({ default: m.AdvisorHoldings })),
 );
@@ -92,39 +98,52 @@ function wrap(Component: ComponentType) {
   );
 }
 
+const CLOUD_THREE_PAGE_MODE = import.meta.env.VITE_VIBE_CLOUD_THREE_PAGE === "1";
+const ROUTER_BASENAME =
+  import.meta.env.BASE_URL && import.meta.env.BASE_URL !== "/"
+    ? import.meta.env.BASE_URL.replace(/\/$/, "")
+    : undefined;
+
+function localOnly(Component: ComponentType) {
+  return CLOUD_THREE_PAGE_MODE ? <Navigate to="/advisor/today" replace /> : wrap(Component);
+}
+
 export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
       { path: "/", element: <Navigate to="/advisor/today" replace /> },
       { path: "/advisor/today", element: wrap(AdvisorToday) },
-      { path: "/advisor/holdings", element: wrap(AdvisorHoldings) },
-      { path: "/advisor/watchlist", element: wrap(AdvisorWatchlist) },
-      { path: "/advisor/journal", element: wrap(AdvisorJournal) },
-      { path: "/event-records", element: wrap(EventRecords) },
-      { path: "/sector-stock-analysis", element: wrap(SectorStockAnalysis) },
-      { path: "/event-radar", element: wrap(EventRadar) },
-      { path: "/sector-radar", element: wrap(SectorRadar) },
-      { path: "/event-reactions", element: wrap(EventReactions) },
-      { path: "/candidate-pool", element: wrap(CandidatePool) },
-      { path: "/strategy-lab", element: wrap(StrategyLab) },
-      { path: "/backtest-results", element: wrap(BacktestResults) },
-      { path: "/risk-portfolio", element: wrap(RiskPortfolio) },
-      { path: "/trade-plan", element: wrap(TradePlan) },
-      { path: "/joinquant-export", element: wrap(JoinQuantExport) },
-      { path: "/strategy-lifecycle", element: wrap(StrategyLifecycle) },
-      { path: "/daily-workflow", element: wrap(DailyWorkflow) },
-      { path: "/data-sources", element: wrap(DataSources) },
-      { path: "/agent", element: wrap(Agent) },
-      { path: "/runtime", element: wrap(Runtime) },
-      { path: "/settings", element: wrap(Settings) },
-      { path: "/runs/:runId", element: wrap(RunDetail) },
-      { path: "/compare", element: wrap(Compare) },
-      { path: "/correlation", element: wrap(Correlation) },
-      { path: "/alpha-zoo", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/compare", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
+      { path: "/advisor/stocks", element: wrap(AdvisorStocks) },
+      { path: "/advisor/memory", element: wrap(AdvisorMemory) },
+      { path: "/advisor/holdings", element: localOnly(AdvisorHoldings) },
+      { path: "/advisor/watchlist", element: localOnly(AdvisorWatchlist) },
+      { path: "/advisor/journal", element: localOnly(AdvisorJournal) },
+      { path: "/event-records", element: localOnly(EventRecords) },
+      { path: "/sector-stock-analysis", element: localOnly(SectorStockAnalysis) },
+      { path: "/event-radar", element: localOnly(EventRadar) },
+      { path: "/sector-radar", element: localOnly(SectorRadar) },
+      { path: "/event-reactions", element: localOnly(EventReactions) },
+      { path: "/candidate-pool", element: localOnly(CandidatePool) },
+      { path: "/strategy-lab", element: localOnly(StrategyLab) },
+      { path: "/backtest-results", element: localOnly(BacktestResults) },
+      { path: "/risk-portfolio", element: localOnly(RiskPortfolio) },
+      { path: "/trade-plan", element: localOnly(TradePlan) },
+      { path: "/joinquant-export", element: localOnly(JoinQuantExport) },
+      { path: "/strategy-lifecycle", element: localOnly(StrategyLifecycle) },
+      { path: "/daily-workflow", element: localOnly(DailyWorkflow) },
+      { path: "/data-sources", element: localOnly(DataSources) },
+      { path: "/agent", element: localOnly(Agent) },
+      { path: "/runtime", element: localOnly(Runtime) },
+      { path: "/settings", element: localOnly(Settings) },
+      { path: "/runs/:runId", element: localOnly(RunDetail) },
+      { path: "/compare", element: localOnly(Compare) },
+      { path: "/correlation", element: localOnly(Correlation) },
+      { path: "/alpha-zoo", element: localOnly(AlphaZoo) },
+      { path: "/alpha-zoo/bench", element: localOnly(AlphaZoo) },
+      { path: "/alpha-zoo/compare", element: localOnly(AlphaZoo) },
+      { path: "/alpha-zoo/:alphaId", element: localOnly(AlphaZoo) },
+      { path: "*", element: <Navigate to="/advisor/today" replace /> },
     ],
   },
-]);
+], { basename: ROUTER_BASENAME });

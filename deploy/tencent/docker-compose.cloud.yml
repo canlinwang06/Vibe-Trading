@@ -1,0 +1,32 @@
+services:
+  vibe-trading-cloud:
+    build:
+      context: ../..
+      args:
+        VITE_BASE_PATH: /vibe-trading/
+        VITE_VIBE_CLOUD_THREE_PAGE: "1"
+    image: vibe-trading:cloud-three-page
+    container_name: vibe-trading-cloud
+    ports:
+      - "127.0.0.1:8899:8899"
+    environment:
+      LANGCHAIN_PROVIDER: openai-codex
+      VIBE_TRADING_TRUST_DOCKER_LOOPBACK: "1"
+      API_AUTH_KEY: ${API_AUTH_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - vibe-cloud-runs:/app/agent/runs
+      - vibe-cloud-sessions:/app/agent/sessions
+      - vibe-cloud-home:/home/vibe/.vibe-trading
+      - vibe-cloud-swarm-runs:/app/agent/.swarm/runs
+      - vibe-cloud-uploads:/app/agent/uploads
+    restart: unless-stopped
+
+volumes:
+  vibe-cloud-runs:
+  vibe-cloud-sessions:
+  vibe-cloud-home:
+  vibe-cloud-swarm-runs:
+  vibe-cloud-uploads:
