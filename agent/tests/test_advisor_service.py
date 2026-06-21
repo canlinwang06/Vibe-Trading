@@ -624,6 +624,33 @@ def test_advisor_risk_filter_flags_holding_overlap(
     assert "holding_overlap" in rule_ids
 
 
+def test_advisor_display_snapshots_are_page_ready(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_complete_holding(service, store)
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+
+    today = service.today_snapshot(as_of_date="2026-06-22")
+    holdings = service.holdings_snapshot(as_of_date="2026-06-22")
+    watchlist = service.watchlist_snapshot(as_of_date="2026-06-22")
+    journal = service.journal_snapshot()
+
+    assert today["title"] == "今日建议"
+    assert today["summary_cards"]
+    assert today["primary_actions"]
+    assert holdings["title"] == "我的持仓"
+    assert holdings["diagnostics"][0]["action"] == "hold"
+    assert watchlist["title"] == "观察清单"
+    assert watchlist["candidates"][0]["suggested_status"] == "ready_small_probe"
+    assert journal["title"] == "复盘记录"
+    assert journal["commands"]
+    assert journal["recommendations"]
+    with store.connect(read_only=True) as conn:
+        snapshot_count = conn.execute("SELECT COUNT(*) FROM advisor_action_snapshots").fetchone()[0]
+    assert snapshot_count == 4
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -795,5 +822,17 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert risk_filters.status_code == 200
     assert risk_filters.json()["scope"] == "current_stage_risk_only"
     assert risk_filters.json()["research_only"] is True
+
+    for path, title in (
+        ("/api/advisor/today-snapshot", "今日建议"),
+        ("/api/advisor/holdings-snapshot", "我的持仓"),
+        ("/api/advisor/watchlist-snapshot", "观察清单"),
+        ("/api/advisor/journal-snapshot", "复盘记录"),
+    ):
+        snapshot = client.get(path, params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"})
+        assert snapshot.status_code == 200
+        assert snapshot.json()["title"] == title
+        assert snapshot.json()["research_only"] is True
+        assert snapshot.json()["live_trading"] is False
 
     assert client.post("/api/advisor/place-order", json={}).status_code == 404

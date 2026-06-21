@@ -913,6 +913,128 @@ class AdvisorService:
             "live_trading": False,
         }
 
+    def today_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return display-ready data for the advisor today page."""
+        as_of = _parse_date(as_of_date)
+        summary = self.portfolio_summary(portfolio_id=portfolio_id)
+        diagnostics = self.diagnose_holdings(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        candidates = self.build_watchlist_candidates(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        risks = self.build_risk_filters(portfolio_id=portfolio_id, as_of_date=as_of)
+        headline = self._today_headline(diagnostics, candidates, risks)
+        primary_actions = self._primary_actions(diagnostics, candidates, risks)
+        snapshot = {
+            "snapshot_type": "today",
+            "title": "今日建议",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "headline": headline,
+            "summary_cards": [
+                {"label": "持仓数量", "value": summary["position_count"]},
+                {"label": "候选数量", "value": candidates["candidate_count"]},
+                {"label": "暂不买风险", "value": risks["item_count"]},
+                {"label": "总盈亏", "value": summary["total_pnl"]},
+            ],
+            "primary_actions": primary_actions,
+            "holding_action_counts": diagnostics["action_counts"],
+            "candidate_status_counts": candidates["status_counts"],
+            "risk_rule_counts": risks["rule_counts"],
+            "data_freshness": self._snapshot_data_freshness(diagnostics, candidates),
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
+    def holdings_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return display-ready data for the holdings care page."""
+        as_of = _parse_date(as_of_date)
+        summary = self.portfolio_summary(portfolio_id=portfolio_id)
+        diagnostics = self.diagnose_holdings(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        prices = self.resolve_portfolio_prices(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of,
+            include_watchlist=False,
+        )
+        snapshot = {
+            "snapshot_type": "holdings",
+            "title": "我的持仓",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "headline": "优先看护已买股票，明确持有、退出或补充逻辑。",
+            "portfolio_summary": summary,
+            "diagnostics": diagnostics["diagnostics"],
+            "prices": prices["prices"],
+            "action_counts": diagnostics["action_counts"],
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
+    def watchlist_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+    ) -> dict[str, Any]:
+        """Return display-ready data for the watchlist page."""
+        as_of = _parse_date(as_of_date)
+        candidates = self.build_watchlist_candidates(portfolio_id=portfolio_id, as_of_date=as_of, persist=True)
+        risks = self.build_risk_filters(portfolio_id=portfolio_id, as_of_date=as_of)
+        snapshot = {
+            "snapshot_type": "watchlist",
+            "title": "观察清单",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "headline": "候选只代表观察和条件等待，不代表直接买入。",
+            "candidates": candidates["candidates"],
+            "do_not_buy_items": risks["do_not_buy_items"],
+            "status_counts": candidates["status_counts"],
+            "risk_rule_counts": risks["rule_counts"],
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
+    def journal_snapshot(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return display-ready command, recommendation, and validation history."""
+        self.store.initialize()
+        capped_limit = min(max(int(limit), 1), 200)
+        with self.store.connect(read_only=True) as conn:
+            commands = self._list_command_events(conn, portfolio_id, capped_limit)
+            recommendations = self._list_recommendations(conn, portfolio_id, capped_limit)
+            validations = self._list_external_validations(conn, portfolio_id, capped_limit)
+        snapshot = {
+            "snapshot_type": "journal",
+            "title": "复盘记录",
+            "portfolio_id": portfolio_id,
+            "headline": "记录 Codex 指令、系统建议和外部验证写回。",
+            "commands": commands,
+            "recommendations": recommendations,
+            "external_validations": validations,
+            "record_count": len(commands) + len(recommendations) + len(validations),
+            "research_only": True,
+            "live_trading": False,
+        }
+        self._record_snapshot(snapshot)
+        return snapshot
+
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
             """
@@ -1516,6 +1638,205 @@ class AdvisorService:
                 "medium",
             )
         return flags
+
+    def _today_headline(
+        self,
+        diagnostics: dict[str, Any],
+        candidates: dict[str, Any],
+        risks: dict[str, Any],
+    ) -> str:
+        if diagnostics["action_counts"].get("exit"):
+            return "有持仓触发退出条件，先处理风险。"
+        if diagnostics["action_counts"].get("complete_thesis"):
+            return "先补齐持仓投资逻辑，再判断买卖。"
+        if candidates["status_counts"].get("ready_small_probe"):
+            return "有候选达到试探条件，但仍需遵守仓位和不买条件。"
+        if risks["item_count"]:
+            return "今天以风控为先，部分候选暂不适合买入。"
+        return "今天以持有和观察为主，等待更清晰的触发条件。"
+
+    def _primary_actions(
+        self,
+        diagnostics: dict[str, Any],
+        candidates: dict[str, Any],
+        risks: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        for item in sorted(diagnostics["diagnostics"], key=lambda row: row["priority"]):
+            if item["action"] in {"exit", "reduce", "complete_thesis", "observe"}:
+                actions.append(
+                    {
+                        "type": "holding",
+                        "ticker": item["ticker"],
+                        "ticker_name": item["ticker_name"],
+                        "action": item["action"],
+                        "label": item["action_label"],
+                        "reason": item["reason"],
+                        "next_review_date": item["next_review_date"],
+                    }
+                )
+        for item in candidates["candidates"]:
+            if item["suggested_status"] in {"ready_small_probe", "waiting_trigger"}:
+                actions.append(
+                    {
+                        "type": "watchlist",
+                        "ticker": item["ticker"],
+                        "ticker_name": item["ticker_name"],
+                        "action": item["suggested_status"],
+                        "label": item["suggested_status_label"],
+                        "reason": item["reason"],
+                        "trigger": item["buy_trigger_price"] or item["buy_trigger_condition"],
+                    }
+                )
+        for item in risks["do_not_buy_items"][:5]:
+            actions.append(
+                {
+                    "type": "risk",
+                    "ticker": item["ticker"],
+                    "ticker_name": item["ticker_name"],
+                    "action": item["rule_id"],
+                    "label": item["rule_label"],
+                    "reason": item["reason"],
+                }
+            )
+        return actions[:8]
+
+    def _snapshot_data_freshness(self, diagnostics: dict[str, Any], candidates: dict[str, Any]) -> dict[str, int]:
+        statuses: Counter[str] = Counter()
+        for item in diagnostics["diagnostics"]:
+            statuses[str(item.get("price", {}).get("freshness_status") or "unknown")] += 1
+        for item in candidates["candidates"]:
+            statuses[str(item.get("price", {}).get("freshness_status") or "unknown")] += 1
+        return dict(sorted(statuses.items()))
+
+    def _record_snapshot(self, snapshot: dict[str, Any]) -> None:
+        self.store.initialize()
+        snapshot_id = _new_id(
+            "snap",
+            f"{snapshot.get('portfolio_id')}:{snapshot.get('snapshot_type')}:{snapshot.get('as_of_date') or _utc_now().date().isoformat()}",
+        )
+        created_at = _utc_now()
+        with self.store.connect() as conn:
+            conn.execute(
+                "DELETE FROM advisor_action_snapshots WHERE snapshot_id = ?",
+                [snapshot_id],
+            )
+            conn.execute(
+                """
+                INSERT INTO advisor_action_snapshots (
+                  snapshot_id, portfolio_id, snapshot_date, snapshot_type, headline,
+                  summary, market_state, action_summary_json, holdings_summary_json,
+                  watchlist_summary_json, risk_summary_json, evidence_json,
+                  data_as_of, data_freshness, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    snapshot_id,
+                    snapshot.get("portfolio_id"),
+                    _parse_optional_date(snapshot.get("as_of_date")) or created_at.date(),
+                    snapshot.get("snapshot_type"),
+                    snapshot.get("headline"),
+                    snapshot.get("title"),
+                    None,
+                    _json_dumps(snapshot.get("primary_actions") or []),
+                    _json_dumps(snapshot.get("diagnostics") or snapshot.get("portfolio_summary") or {}),
+                    _json_dumps(snapshot.get("candidates") or {}),
+                    _json_dumps(snapshot.get("do_not_buy_items") or snapshot.get("risk_rule_counts") or {}),
+                    _json_dumps({"snapshot_type": snapshot.get("snapshot_type")}),
+                    created_at,
+                    _json_dumps(snapshot.get("data_freshness") or {}),
+                    created_at,
+                ],
+            )
+
+    def _list_command_events(self, conn: Any, portfolio_id: str, limit: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT command_id, idempotency_key, command_type, source, status,
+                   request_json, response_json, error_message, created_by, created_at
+            FROM advisor_command_events
+            WHERE portfolio_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            [portfolio_id, limit],
+        ).fetchall()
+        return [
+            {
+                "command_id": row[0],
+                "idempotency_key": row[1],
+                "command_type": row[2],
+                "source": row[3],
+                "status": row[4],
+                "request": _json_loads(row[5]),
+                "response": _json_loads(row[6]),
+                "error_message": row[7],
+                "created_by": row[8],
+                "created_at": _dt_or_none(row[9]),
+            }
+            for row in rows
+        ]
+
+    def _list_recommendations(self, conn: Any, portfolio_id: str, limit: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT recommendation_id, as_of_date, action_type, action_label,
+                   ticker, ticker_name, priority, reason, evidence_json,
+                   data_freshness, status, created_at
+            FROM advisor_action_recommendations
+            WHERE portfolio_id = ?
+            ORDER BY created_at DESC, priority
+            LIMIT ?
+            """,
+            [portfolio_id, limit],
+        ).fetchall()
+        return [
+            {
+                "recommendation_id": row[0],
+                "as_of_date": _date_or_none(row[1]),
+                "action_type": row[2],
+                "action_label": row[3],
+                "ticker": row[4],
+                "ticker_name": row[5],
+                "priority": row[6],
+                "reason": row[7],
+                "evidence": _json_loads(row[8]),
+                "data_freshness": row[9],
+                "status": row[10],
+                "created_at": _dt_or_none(row[11]),
+            }
+            for row in rows
+        ]
+
+    def _list_external_validations(self, conn: Any, portfolio_id: str, limit: int) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT validation_id, source, source_ref, subject_type, subject_id,
+                   validation_date, status, metrics_json, summary, created_by, created_at
+            FROM external_validation_results
+            WHERE portfolio_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            [portfolio_id, limit],
+        ).fetchall()
+        return [
+            {
+                "validation_id": row[0],
+                "source": row[1],
+                "source_ref": row[2],
+                "subject_type": row[3],
+                "subject_id": row[4],
+                "validation_date": _date_or_none(row[5]),
+                "status": row[6],
+                "metrics": _json_loads(row[7]),
+                "summary": row[8],
+                "created_by": row[9],
+                "created_at": _dt_or_none(row[10]),
+            }
+            for row in rows
+        ]
 
     def _resolve_price_row(
         self,
