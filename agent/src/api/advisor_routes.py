@@ -321,3 +321,20 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
             )
         except AdvisorError as exc:
             raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/risk-filters", dependencies=[Depends(auth)])
+    def build_risk_filters(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        as_of_date: str | None = Query(None, min_length=10, max_length=10),
+        limit: int = Query(50, ge=1, le=200),
+        stale_after_days: int = Query(5, ge=1, le=30),
+    ) -> dict[str, Any]:
+        try:
+            return _service().build_risk_filters(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                limit=limit,
+                stale_after_days=stale_after_days,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc

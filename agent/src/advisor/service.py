@@ -838,6 +838,17 @@ class AdvisorService:
         capped_limit = min(max(int(limit), 1), 200)
         with self.store.connect() as conn:
             rows = self._load_watchlist_sources(conn, clean_portfolio_id, as_of, capped_limit)
+            held_tickers = {
+                str(row[0])
+                for row in conn.execute(
+                    """
+                    SELECT ticker
+                    FROM positions
+                    WHERE portfolio_id = ? AND status <> 'closed'
+                    """,
+                    [clean_portfolio_id],
+                ).fetchall()
+            }
             candidates: list[dict[str, Any]] = []
             for row in rows:
                 thesis = self._thesis_for_watchlist_source(conn, clean_portfolio_id, row)
@@ -852,6 +863,7 @@ class AdvisorService:
                     thesis=thesis,
                     price=price,
                     as_of=as_of,
+                    held_tickers=held_tickers,
                 )
                 if persist:
                     self._record_watchlist_recommendation(conn, clean_portfolio_id, candidate, as_of)
@@ -864,6 +876,39 @@ class AdvisorService:
             "candidates": candidates,
             "candidate_count": len(candidates),
             "status_counts": status_counts,
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def build_risk_filters(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+        limit: int = 50,
+        stale_after_days: int = 5,
+    ) -> dict[str, Any]:
+        """Build a current-stage do-not-buy list from candidate risk rules."""
+        candidates_result = self.build_watchlist_candidates(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+            limit=limit,
+            stale_after_days=stale_after_days,
+            persist=False,
+        )
+        risk_items: list[dict[str, Any]] = []
+        for candidate in candidates_result["candidates"]:
+            for flag in self._risk_flags_for_candidate(candidate):
+                risk_items.append(flag)
+        rule_counts = dict(sorted(Counter(item["rule_id"] for item in risk_items).items()))
+        return {
+            "status": "ok",
+            "portfolio_id": candidates_result["portfolio_id"],
+            "as_of_date": candidates_result["as_of_date"],
+            "do_not_buy_items": risk_items,
+            "item_count": len(risk_items),
+            "rule_counts": rule_counts,
+            "scope": "current_stage_risk_only",
             "research_only": True,
             "live_trading": False,
         }
@@ -1263,6 +1308,7 @@ class AdvisorService:
         thesis: dict[str, Any] | None,
         price: dict[str, Any],
         as_of: date,
+        held_tickers: set[str],
     ) -> dict[str, Any]:
         trigger_price = source.get("trigger_price") or source.get("target_buy_price")
         buy_condition = (
@@ -1278,7 +1324,11 @@ class AdvisorService:
         has_exit = bool(thesis and thesis.get("has_exit_condition"))
         complete = bool(thesis and thesis.get("completeness_status") == "complete")
         close = price.get("close")
-        if not complete or not has_exit:
+        if source["ticker"] in held_tickers:
+            status = "risk_high"
+            status_label = "持仓重叠"
+            reason = f"{source['ticker_name']} 已在当前持仓中，不能重复展示为新增买入候选。"
+        elif not complete or not has_exit:
             status = "needs_exit_condition"
             status_label = "补充退出条件"
             reason = f"{source['ticker_name']} 还没有完整退出条件，不能进入可小仓试探。"
@@ -1348,6 +1398,7 @@ class AdvisorService:
             "waiting_trigger": 2,
             "observe": 3,
             "needs_exit_condition": 3,
+            "risk_high": 3,
             "missed": 4,
         }.get(candidate["suggested_status"], 5)
         conn.execute(
@@ -1380,6 +1431,91 @@ class AdvisorService:
                 _utc_now(),
             ],
         )
+
+    def _risk_flags_for_candidate(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
+        flags: list[dict[str, Any]] = []
+        ticker = candidate["ticker"]
+        ticker_name = candidate["ticker_name"]
+
+        def add(rule_id: str, rule_label: str, reason: str, severity: str = "medium") -> None:
+            flags.append(
+                {
+                    "ticker": ticker,
+                    "ticker_name": ticker_name,
+                    "rule_id": rule_id,
+                    "rule_label": rule_label,
+                    "severity": severity,
+                    "reason": reason,
+                    "candidate_status": candidate["suggested_status"],
+                    "candidate_status_label": candidate["suggested_status_label"],
+                    "evidence": candidate.get("evidence") or {},
+                    "scope": "current_stage_risk_only",
+                    "research_only": True,
+                    "live_trading": False,
+                }
+            )
+
+        status = candidate.get("suggested_status")
+        price = candidate.get("price") or {}
+        evidence = candidate.get("evidence") or {}
+        source_evidence = evidence.get("source_evidence") or {}
+        if status == "missed":
+            add(
+                "chase_risk",
+                "追高风险",
+                f"{ticker_name} 当前价明显高于买入触发价，当前阶段暂不追高。",
+                "high",
+            )
+        if status == "needs_exit_condition" or not evidence.get("has_exit_condition"):
+            add(
+                "missing_exit_condition",
+                "没有清晰卖出线",
+                f"{ticker_name} 缺少退出条件或硬止损线，当前阶段暂不买。",
+                "high",
+            )
+        if status == "risk_high":
+            add(
+                "holding_overlap",
+                "与当前持仓重叠",
+                f"{ticker_name} 已在持仓中，当前阶段不作为新增买入候选。",
+                "medium",
+            )
+        if price.get("suspended"):
+            add(
+                "suspended",
+                "停牌风险",
+                f"{ticker_name} 最新行情标记为停牌，当前阶段暂不买。",
+                "high",
+            )
+        if price.get("freshness_status") in {"missing", "stale"}:
+            add(
+                "stale_or_missing_price",
+                "行情缺失或过期",
+                f"{ticker_name} 行情数据缺失或过期，当前阶段暂不买。",
+                "medium",
+            )
+        if not candidate.get("max_position_pct"):
+            add(
+                "missing_position_limit",
+                "仓位边界缺失",
+                f"{ticker_name} 没有设置最大仓位，当前阶段不进入买入清单。",
+                "medium",
+            )
+        if "未设置不买条件" in str(candidate.get("not_buy_conditions") or ""):
+            add(
+                "missing_not_buy_condition",
+                "不买条件缺失",
+                f"{ticker_name} 没有明确不买条件，当前阶段暂不买。",
+                "medium",
+            )
+        if not evidence.get("thesis_id") and not source_evidence.get("candidate_pool_date"):
+            add(
+                "insufficient_evidence",
+                "证据不足",
+                f"{ticker_name} 缺少投资逻辑或来源证据，当前阶段只观察不买入。",
+                "medium",
+            )
+        return flags
 
     def _resolve_price_row(
         self,

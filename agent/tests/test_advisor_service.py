@@ -549,6 +549,81 @@ def test_advisor_watchlist_candidates_can_include_candidate_pool_sources(
     assert candidate["suggested_status"] == "needs_exit_condition"
 
 
+def test_advisor_risk_filter_flags_chase_risk(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=46.0, trigger_price=42.0)
+
+    result = service.build_risk_filters(as_of_date="2026-06-22")
+    rule_ids = {item["rule_id"] for item in result["do_not_buy_items"]}
+
+    assert "chase_risk" in rule_ids
+    assert result["scope"] == "current_stage_risk_only"
+    assert any("当前阶段暂不追高" in item["reason"] for item in result["do_not_buy_items"])
+
+
+def test_advisor_risk_filter_flags_missing_exit_condition(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0, include_exit=False)
+
+    result = service.build_risk_filters(as_of_date="2026-06-22")
+    rule_ids = {item["rule_id"] for item in result["do_not_buy_items"]}
+
+    assert "missing_exit_condition" in rule_ids
+    assert any("当前阶段暂不买" in item["reason"] for item in result["do_not_buy_items"])
+
+
+def test_advisor_risk_filter_flags_insufficient_evidence(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_market_price(
+        store,
+        ticker="002230.SZ",
+        ticker_name="科大讯飞",
+        trade_date=date(2026, 6, 22),
+        close=50.0,
+    )
+    service.upsert_watchlist_item(
+        ticker="002230.SZ",
+        ticker_name="科大讯飞",
+        trigger_price=51.0,
+        reason=None,
+    )
+
+    result = service.build_risk_filters(as_of_date="2026-06-22")
+    rule_ids = {item["rule_id"] for item in result["do_not_buy_items"]}
+
+    assert "insufficient_evidence" in rule_ids
+    assert "missing_not_buy_condition" in rule_ids
+
+
+def test_advisor_risk_filter_flags_holding_overlap(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+    service.record_transaction(
+        ticker="000977.SZ",
+        ticker_name="浪潮信息",
+        action="buy",
+        price=38.0,
+        quantity=100,
+        trade_date="2026-06-21",
+        idempotency_key="buy-overlap-000977",
+    )
+
+    candidates = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    result = service.build_risk_filters(as_of_date="2026-06-22")
+    rule_ids = {item["rule_id"] for item in result["do_not_buy_items"]}
+
+    assert candidates["candidates"][0]["suggested_status"] == "risk_high"
+    assert "holding_overlap" in rule_ids
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -712,5 +787,13 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert candidates.json()["candidate_count"] == 1
     assert candidates.json()["candidates"][0]["suggested_status"] == "ready_small_probe"
     assert candidates.json()["candidates"][0]["research_only"] is True
+
+    risk_filters = client.get(
+        "/api/advisor/risk-filters",
+        params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"},
+    )
+    assert risk_filters.status_code == 200
+    assert risk_filters.json()["scope"] == "current_stage_risk_only"
+    assert risk_filters.json()["research_only"] is True
 
     assert client.post("/api/advisor/place-order", json={}).status_code == 404
