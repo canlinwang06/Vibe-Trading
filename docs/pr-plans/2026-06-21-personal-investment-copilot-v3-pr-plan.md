@@ -2,6 +2,18 @@
 
 Date: 2026-06-21
 Spec: `docs/superpowers/specs/2026-06-21-personal-investment-copilot-v3.md`
+Action-display refinement: `docs/pr-plans/2026-06-21-advisor-action-display-pr-plan.md`
+
+## 2026-06-21 Refinement
+
+The broad PR-C plan remains the product baseline. The approved "advisor action display" experience has been decomposed into PR-A0 to PR-A13 in `docs/pr-plans/2026-06-21-advisor-action-display-pr-plan.md`.
+
+Use the PR-A plan when implementing the simplified investor-facing page that answers:
+
+- What should I do with current holdings?
+- What should I prepare to buy, and only under what conditions?
+- What should I avoid buying now?
+- What can I ask Codex to do next?
 
 ## Overall Build Strategy
 

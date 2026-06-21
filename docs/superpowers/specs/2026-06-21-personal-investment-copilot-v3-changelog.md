@@ -1,5 +1,22 @@
 # Personal Investment Copilot V3 Changelog
 
+## 3.1.0 - 2026-06-21
+
+Change type: added
+
+Summary:
+
+- Added an executable PR-A0 to PR-A13 plan for the approved advisor action display.
+- Clarified that the Web UI should show investor-facing action results instead of complex backend analysis steps.
+- Added implementation scope for holdings, sell lines, buy triggers, do-not-buy filters, Codex command helpers, alerts, journals, and JoinQuant result writeback.
+- Confirmed desktop-only first delivery for the advisor display page.
+
+Impact:
+
+- Documentation only.
+- No runtime behavior change.
+- Future implementation work for the simplified advisor page should reference `docs/pr-plans/2026-06-21-advisor-action-display-pr-plan.md`.
+
 ## 3.0.0 - 2026-06-21
 
 Change type: added

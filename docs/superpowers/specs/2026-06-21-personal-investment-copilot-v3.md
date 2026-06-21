@@ -7,6 +7,7 @@ Related docs:
 - `docs/superpowers/specs/2026-06-20-two-module-event-research-design.md`
 - `docs/superpowers/specs/2026-06-21-codex-command-presentation-layer-design.md`
 - `docs/pr-plans/2026-06-21-personal-investment-copilot-v3-pr-plan.md`
+- `docs/pr-plans/2026-06-21-advisor-action-display-pr-plan.md`
 
 ## 1. Product Positioning
 
