@@ -41,6 +41,8 @@ const candidate = {
   buy_trigger_condition: "放量突破触发价且板块热度不退潮。",
   not_buy_conditions: "高开超过 6% 或量能不足不买。",
   max_position_pct: 0.08,
+  suggested_buy_shares: 100,
+  suggested_buy_amount: 4200,
   target_holding_days: 8,
 };
 
@@ -140,6 +142,10 @@ describe("Advisor pages", () => {
     expect(screen.getByText("可小仓试探")).toBeInTheDocument();
     expect(screen.getByText("建议仓位上限")).toBeInTheDocument();
     expect(screen.getByText("8%")).toBeInTheDocument();
+    expect(screen.getByText("模拟买入")).toBeInTheDocument();
+    expect(screen.getByText("100 股")).toBeInTheDocument();
+    expect(screen.getByText("预计金额")).toBeInTheDocument();
+    expect(screen.getByText("¥4,200")).toBeInTheDocument();
     expect(screen.getByText("当前阶段暂不买")).toBeInTheDocument();
     expect(screen.getByText("追高风险")).toBeInTheDocument();
   });

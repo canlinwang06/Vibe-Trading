@@ -73,6 +73,16 @@ function formatPercent(value: number | null | undefined): string {
   return `${Math.round(value * 1000) / 10}%`;
 }
 
+function formatMoney(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+}
+
+function formatShares(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  return value > 0 ? `${Math.round(value)} 股` : "只观察";
+}
+
 function actionTone(action?: string): string {
   if (action === "exit" || action === "risk_high" || action === "chase_risk") return "border-destructive/40 bg-destructive/5";
   if (action === "reduce" || action === "complete_thesis" || action === "needs_exit_condition") return "border-warning/40 bg-warning/5";
@@ -229,10 +239,18 @@ function CandidateCard({ item }: { item: AdvisorCandidate }) {
         <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.buy_trigger_price)}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
-      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
         <div>
           <dt className="text-muted-foreground">建议仓位上限</dt>
           <dd className="mt-1 font-medium">{formatPercent(item.max_position_pct)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">模拟买入</dt>
+          <dd className="mt-1 font-medium">{formatShares(item.suggested_buy_shares)}</dd>
+        </div>
+        <div>
+          <dt className="text-muted-foreground">预计金额</dt>
+          <dd className="mt-1 font-medium">{formatMoney(item.suggested_buy_amount)}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">观察周期</dt>

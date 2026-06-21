@@ -485,6 +485,26 @@ def test_advisor_watchlist_candidate_waits_for_trigger(
     assert candidate["target_holding_days"] == 8
 
 
+def test_advisor_watchlist_candidate_includes_lot_sizing(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+    with store.connect() as conn:
+        conn.execute(
+            "UPDATE portfolios SET initial_cash = 100000, cash_balance = 100000 WHERE portfolio_id = 'cn_a_main'"
+        )
+
+    result = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = result["candidates"][0]
+
+    assert candidate["position_budget"] == 10000.0
+    assert candidate["sizing_price"] == 42.0
+    assert candidate["suggested_buy_shares"] == 200
+    assert candidate["suggested_buy_amount"] == 8400.0
+    assert candidate["risk_amount_at_stop"] == 672.0
+
+
 def test_advisor_watchlist_candidate_can_be_small_probe_only_with_exit_condition(
     service: AdvisorService,
     store: AShareDataStore,

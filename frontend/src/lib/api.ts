@@ -2815,6 +2815,11 @@ export interface AdvisorCandidate {
   buy_trigger_condition?: string | null;
   not_buy_conditions?: string | null;
   max_position_pct?: number | null;
+  suggested_buy_shares?: number | null;
+  suggested_buy_amount?: number | null;
+  position_budget?: number | null;
+  sizing_price?: number | null;
+  risk_amount_at_stop?: number | null;
   target_holding_days?: number | null;
   price?: Record<string, unknown>;
 }

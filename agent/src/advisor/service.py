@@ -841,6 +841,7 @@ class AdvisorService:
         as_of = _parse_date(as_of_date)
         capped_limit = min(max(int(limit), 1), 200)
         with self.store.connect() as conn:
+            self._ensure_portfolio(conn, clean_portfolio_id)
             rows = self._load_watchlist_sources(conn, clean_portfolio_id, as_of, capped_limit)
             held_tickers = {
                 str(row[0])
@@ -853,6 +854,8 @@ class AdvisorService:
                     [clean_portfolio_id],
                 ).fetchall()
             }
+            portfolio_summary = self._portfolio_summary(conn, clean_portfolio_id)
+            sizing_base = self._portfolio_sizing_base(portfolio_summary)
             candidates: list[dict[str, Any]] = []
             for row in rows:
                 thesis = self._thesis_for_watchlist_source(conn, clean_portfolio_id, row)
@@ -870,6 +873,7 @@ class AdvisorService:
                     validation=validation,
                     as_of=as_of,
                     held_tickers=held_tickers,
+                    portfolio_sizing_base=sizing_base,
                 )
                 if persist:
                     self._record_watchlist_recommendation(conn, clean_portfolio_id, candidate, as_of)
@@ -1762,6 +1766,52 @@ class AdvisorService:
             return "passed"
         return "neutral"
 
+    @staticmethod
+    def _portfolio_sizing_base(summary: dict[str, Any]) -> float:
+        cash = float(summary.get("cash_balance") or 0.0)
+        market_value = float(summary.get("market_value") or 0.0)
+        total_value = cash + market_value
+        if total_value > 0:
+            return total_value
+        return float(summary.get("initial_cash") or 0.0)
+
+    @staticmethod
+    def _watchlist_sizing(
+        *,
+        portfolio_sizing_base: float,
+        max_position_pct: Any,
+        trigger_price: Any,
+        fallback_price: Any,
+        stop_loss_price: Any,
+        lot_size: int = 100,
+    ) -> dict[str, Any]:
+        try:
+            max_pct = float(max_position_pct or 0.0)
+            price = float(trigger_price or fallback_price or 0.0)
+            base = float(portfolio_sizing_base or 0.0)
+        except (TypeError, ValueError):
+            max_pct = 0.0
+            price = 0.0
+            base = 0.0
+        budget = max(base * max_pct, 0.0)
+        lot_cost = price * lot_size if price > 0 else 0.0
+        lots = int(budget // lot_cost) if lot_cost > 0 else 0
+        shares = max(lots * lot_size, 0)
+        amount = shares * price
+        try:
+            stop = float(stop_loss_price or 0.0)
+        except (TypeError, ValueError):
+            stop = 0.0
+        risk_amount = shares * max(price - stop, 0.0) if shares and stop > 0 else None
+        return {
+            "position_budget": round(budget, 2) if budget else None,
+            "sizing_price": round(price, 4) if price else None,
+            "suggested_buy_shares": shares,
+            "suggested_buy_amount": round(amount, 2) if shares else 0.0,
+            "lot_size": lot_size,
+            "risk_amount_at_stop": round(risk_amount, 2) if risk_amount is not None else None,
+        }
+
     def _evaluate_watchlist_candidate(
         self,
         *,
@@ -1771,6 +1821,7 @@ class AdvisorService:
         validation: dict[str, Any] | None,
         as_of: date,
         held_tickers: set[str],
+        portfolio_sizing_base: float,
     ) -> dict[str, Any]:
         trigger_price = source.get("trigger_price") or source.get("target_buy_price")
         buy_condition = (
@@ -1783,9 +1834,16 @@ class AdvisorService:
         )
         max_position_pct = source.get("max_position_pct") or (thesis.get("max_position_pct") if thesis else None)
         target_holding_days = thesis.get("target_holding_days") if thesis else None
+        close = price.get("close")
+        sizing = self._watchlist_sizing(
+            portfolio_sizing_base=portfolio_sizing_base,
+            max_position_pct=max_position_pct,
+            trigger_price=trigger_price,
+            fallback_price=close,
+            stop_loss_price=source.get("stop_loss_price") or (thesis.get("stop_loss_price") if thesis else None),
+        )
         has_exit = bool(thesis and thesis.get("has_exit_condition"))
         complete = bool(thesis and thesis.get("completeness_status") == "complete")
-        close = price.get("close")
         validation_signal = self._external_validation_signal(validation)
         if validation_signal == "failed":
             status = "risk_high"
@@ -1836,6 +1894,12 @@ class AdvisorService:
             "buy_trigger_condition": buy_condition,
             "not_buy_conditions": not_buy_conditions,
             "max_position_pct": max_position_pct,
+            "suggested_buy_shares": sizing["suggested_buy_shares"],
+            "suggested_buy_amount": sizing["suggested_buy_amount"],
+            "position_budget": sizing["position_budget"],
+            "sizing_price": sizing["sizing_price"],
+            "lot_size": sizing["lot_size"],
+            "risk_amount_at_stop": sizing["risk_amount_at_stop"],
             "target_holding_days": target_holding_days,
             "reason": reason,
             "price": price,
