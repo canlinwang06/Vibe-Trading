@@ -10,7 +10,12 @@ from typing import Iterator
 
 import duckdb
 
-from src.ashare_data.schema import PR03_CORE_TABLE_NAMES, PR03_CORE_TABLES, PR03_SCHEMA_VERSION
+from src.ashare_data.schema import (
+    PR03_CORE_ALTERATIONS,
+    PR03_CORE_TABLE_NAMES,
+    PR03_CORE_TABLES,
+    PR03_SCHEMA_VERSION,
+)
 from src.config.paths import get_data_dir
 
 ASHARE_DATA_ROOT_ENV = "ASHARE_DATA_ROOT"
@@ -79,7 +84,10 @@ class AShareDataStore:
     def connect(self, *, read_only: bool = False) -> Iterator[duckdb.DuckDBPyConnection]:
         """Open a DuckDB connection and close it after use."""
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        with duckdb.connect(str(self.database_path), read_only=read_only) as conn:
+        # DuckDB rejects mixing read_only=True and read_only=False connections to
+        # the same file inside one process. The local API serves concurrent
+        # read and initialization requests, so keep one connection mode.
+        with duckdb.connect(str(self.database_path), read_only=False) as conn:
             yield conn
 
     def initialize(self) -> InitResult:
@@ -94,6 +102,8 @@ class AShareDataStore:
         with self.connect(read_only=False) as conn:
             for table in PR03_CORE_TABLES:
                 conn.execute(table.sql)
+            for statement in PR03_CORE_ALTERATIONS:
+                conn.execute(statement)
 
         return InitResult(
             database_path=self.database_path,

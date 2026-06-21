@@ -60,6 +60,11 @@ REQUIRED_TOOL_NAMES = {
     "trading_orders",
     "trading_quote",
     "trading_history",
+    "advisor_record_transaction",
+    "advisor_upsert_thesis",
+    "advisor_upsert_watchlist_item",
+    "advisor_today_snapshot",
+    "advisor_record_external_validation",
 }
 
 

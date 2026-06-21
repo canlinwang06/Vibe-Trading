@@ -26,7 +26,9 @@ EXPECTED_PR03_TABLES = (
     "event_stock_map",
     "event_reactions",
     "market_daily",
+    "collector_runs",
     "sector_daily",
+    "stock_anomaly_snapshots",
     "sector_scores",
     "candidate_pool",
     "strategy_specs",
@@ -35,6 +37,21 @@ EXPECTED_PR03_TABLES = (
     "strategy_allocations",
     "execution_signals",
     "jq_execution_reports",
+    "jq_orchestration_tasks",
+    "strategy_lifecycle",
+    "strategy_lifecycle_events",
+    "portfolios",
+    "positions",
+    "advisor_transactions",
+    "position_lots",
+    "investment_theses",
+    "watchlist_items",
+    "advisor_action_recommendations",
+    "advisor_action_snapshots",
+    "advisor_command_events",
+    "external_validation_results",
+    "advisor_alerts",
+    "decision_journal",
 )
 
 
@@ -82,6 +99,16 @@ def test_initialize_store_is_idempotent_and_preserves_existing_rows(tmp_path: Pa
     assert row == ("600519.SH", "贵州茅台", "CN_A", True)
 
 
+def test_store_reads_tables_while_write_connection_is_open(tmp_path: Path) -> None:
+    """The local API may inspect schema while another request holds a write connection."""
+    store = AShareDataStore(database_path=tmp_path / "ashare.duckdb")
+    store.initialize()
+
+    with store.connect(read_only=False) as conn:
+        conn.execute("SELECT 1").fetchone()
+        assert store.list_tables() == EXPECTED_PR03_TABLES
+
+
 def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     """Tables should expose the key fields from the product requirements."""
     store = AShareDataStore(database_path=tmp_path / "ashare.duckdb")
@@ -125,8 +152,60 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     assert {"report_id", "order_status", "raw_report", "error_message"}.issubset(
         store.table_columns("jq_execution_reports")
     )
+    assert {"run_id", "collector_type", "rows_written", "error_message"}.issubset(
+        store.table_columns("collector_runs")
+    )
+    assert {"anomaly_type", "pct_change", "volume_ratio", "evidence_json"}.issubset(
+        store.table_columns("stock_anomaly_snapshots")
+    )
     assert {"reaction_id", "window", "abnormal_return", "max_drawdown"}.issubset(
         store.table_columns("event_reactions")
+    )
+    assert {"portfolio_id", "research_only", "live_trading"}.issubset(
+        store.table_columns("portfolios")
+    )
+    assert {"position_id", "ticker", "average_cost", "status", "thesis_id"}.issubset(
+        store.table_columns("positions")
+    )
+    assert {"transaction_id", "action", "idempotency_key", "live_trading"}.issubset(
+        store.table_columns("advisor_transactions")
+    )
+    assert {"lot_id", "buy_price", "remaining_quantity", "cost_basis"}.issubset(
+        store.table_columns("position_lots")
+    )
+    assert {
+        "thesis_id",
+        "invalidation_conditions",
+        "entry_conditions",
+        "exit_conditions",
+        "not_buy_conditions",
+        "review_frequency_days",
+        "next_review_date",
+        "completeness_status",
+        "evidence_json",
+    }.issubset(
+        store.table_columns("investment_theses")
+    )
+    assert {"item_id", "thesis_id", "trigger_price", "not_buy_conditions"}.issubset(
+        store.table_columns("watchlist_items")
+    )
+    assert {"recommendation_id", "action_type", "evidence_json"}.issubset(
+        store.table_columns("advisor_action_recommendations")
+    )
+    assert {"snapshot_id", "headline", "action_summary_json"}.issubset(
+        store.table_columns("advisor_action_snapshots")
+    )
+    assert {"command_id", "idempotency_key", "request_json", "response_json"}.issubset(
+        store.table_columns("advisor_command_events")
+    )
+    assert {"validation_id", "source", "metrics_json", "raw_result_json"}.issubset(
+        store.table_columns("external_validation_results")
+    )
+    assert {"alert_id", "alert_type", "severity", "status", "acknowledged_at"}.issubset(
+        store.table_columns("advisor_alerts")
+    )
+    assert {"journal_id", "decision", "codex_explanation", "review_notes"}.issubset(
+        store.table_columns("decision_journal")
     )
 
 
@@ -157,3 +236,102 @@ def test_candidate_pool_round_trip(tmp_path: Path) -> None:
         ).fetchall()
 
     assert rows == [("300750.SZ", "宁德时代", "CN_A", "固态电池", True)]
+
+
+def test_advisor_schema_supports_core_manual_records(tmp_path: Path) -> None:
+    """The advisor tables should support portfolio, lot, watchlist, and advice records."""
+    store = AShareDataStore(database_path=tmp_path / "ashare.duckdb")
+    store.initialize()
+
+    with store.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO portfolios (
+              portfolio_id, portfolio_name, research_only, live_trading, status, created_at, updated_at
+            )
+            VALUES ('cn_a_main', 'A股投资助手组合', true, false, 'active', now(), now())
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO positions (
+              position_id, portfolio_id, ticker, ticker_name, total_quantity, available_quantity,
+              average_cost, invested_cost, realized_pnl, status, first_buy_date, last_trade_date,
+              created_at, updated_at
+            )
+            VALUES (
+              'pos_cn_a_300308', 'cn_a_main', '300308.SZ', '中际旭创', 100, 100,
+              10.2, 1020, 0, 'open', DATE '2026-06-21', DATE '2026-06-21', now(), now()
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO position_lots (
+              lot_id, portfolio_id, position_id, ticker, ticker_name, buy_date,
+              buy_price, initial_quantity, remaining_quantity, cost_basis, status,
+              created_at, updated_at
+            )
+            VALUES (
+              'lot_cn_a_300308_001', 'cn_a_main', 'pos_cn_a_300308', '300308.SZ',
+              '中际旭创', DATE '2026-06-21', 10.2, 100, 100, 1020, 'open', now(), now()
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO watchlist_items (
+              item_id, portfolio_id, ticker, ticker_name, theme, watch_status,
+              trigger_price, not_buy_conditions, reason, created_at, updated_at
+            )
+            VALUES (
+              'watch_ai_compute_001', 'cn_a_main', '000977.SZ', '浪潮信息', 'AI算力',
+              'waiting_trigger', 42.5, '板块热度退潮不买', '等待买入条件确认', now(), now()
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO advisor_action_recommendations (
+              recommendation_id, portfolio_id, as_of_date, action_type, action_label,
+              ticker, ticker_name, priority, confidence, reason, evidence_json, status, created_at
+            )
+            VALUES (
+              'rec_ai_compute_001', 'cn_a_main', DATE '2026-06-21', 'prepare_buy',
+              '等待买点', '000977.SZ', '浪潮信息', 1, 0.72,
+              'AI算力仍在扩散，但需要价格触发。', '{"sources":["unit-test"]}', 'active', now()
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO external_validation_results (
+              validation_id, portfolio_id, source, source_ref, subject_type, subject_id,
+              validation_date, status, metrics_json, summary, raw_result_json, created_by, created_at
+            )
+            VALUES (
+              'validation_jq_001', 'cn_a_main', 'joinquant_manual', 'manual-backtest-001',
+              'recommendation', 'rec_ai_compute_001', DATE '2026-06-21', 'reviewed',
+              '{"annual_return":0.12}', '外部回测结果由 Codex 写回，仅用于研究展示。',
+              '{"source":"manual"}', 'codex', now()
+            )
+            """
+        )
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "portfolios",
+                "position_lots",
+                "watchlist_items",
+                "advisor_action_recommendations",
+                "external_validation_results",
+            )
+        }
+
+    assert counts == {
+        "portfolios": 1,
+        "position_lots": 1,
+        "watchlist_items": 1,
+        "advisor_action_recommendations": 1,
+        "external_validation_results": 1,
+    }

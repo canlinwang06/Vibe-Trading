@@ -53,6 +53,26 @@ def test_joinquant_task_service_updates_status_and_result_summary(store: AShareD
     assert updated["evidence"][0]["type"] == "screenshot"
 
 
+def test_joinquant_task_service_generates_codex_automation_plan(store: AShareDataStore) -> None:
+    service = JoinQuantTaskService(store=store)
+    task = service.create_task(source_idea_id="idea_ai", signal_date="2026-06-21")
+
+    plan = service.automation_plan(
+        task["task_id"],
+        start_date="2026-01-01",
+        end_date="2026-06-21",
+        initial_cash=500_000,
+    )
+
+    assert plan["status"] == "ok"
+    assert plan["backtest_window"]["initial_cash"] == pytest.approx(500_000)
+    assert "create_backtest" in plan["joinquant_research_script"]
+    assert "get_backtest" in plan["joinquant_research_script"]
+    assert plan["safety_guardrails"]["stores_joinquant_password"] is False
+    assert plan["safety_guardrails"]["submits_live_orders"] is False
+    assert any(step["step"] == "write_back" for step in plan["browser_steps"])
+
+
 def test_joinquant_task_service_rejects_missing_source(store: AShareDataStore) -> None:
     service = JoinQuantTaskService(store=store)
 

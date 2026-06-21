@@ -143,6 +143,34 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getAdvisorTodaySnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorTodaySnapshot>(`/api/advisor/today-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorHoldingsSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorHoldingsSnapshot>(`/api/advisor/holdings-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorWatchlistSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorWatchlistSnapshot>(`/api/advisor/watchlist-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorJournalSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AdvisorJournalSnapshot>(`/api/advisor/journal-snapshot${qs ? `?${qs}` : ""}`);
+  },
   getDailyIntelligence: (params: DailyIntelligenceQuery = {}) => {
     const q = new URLSearchParams();
     if (params.as_of_date) q.set("as_of_date", params.as_of_date);
@@ -155,6 +183,25 @@ export const api = {
     if (params.theme) q.set("theme", params.theme);
     const qs = q.toString();
     return request<SectorStockDashboardResponse>(`/api/ashare-dashboard/sector-stock-analysis${qs ? `?${qs}` : ""}`);
+  },
+  runAShareCollection: (body: AShareCollectionRunRequest) =>
+    request<AShareCollectionRunResponse>("/api/ashare/collection/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getAShareMarketSnapshot: (params: AShareSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AShareMarketSnapshotResponse>(`/api/ashare/market-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAShareSectorAnomalies: (params: AShareSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AShareSectorAnomalySnapshotResponse>(`/api/ashare/sector-anomalies${qs ? `?${qs}` : ""}`);
   },
   listEventRecords: (params: EventRecordQuery = {}) => {
     const q = new URLSearchParams();
@@ -265,6 +312,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  joinQuantImportBacktestResult: (body: JoinQuantBacktestResultImportRequest) =>
+    request<JoinQuantBacktestResultImportResponse>("/api/joinquant/backtest-results/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   joinQuantListExecutionReports: (params: JoinQuantExecutionReportQuery = {}) => {
     const q = new URLSearchParams();
     if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
@@ -309,6 +361,11 @@ export const api = {
   joinQuantUpdateTask: (taskId: string, body: JoinQuantTaskUpdateRequest) =>
     request<JoinQuantTaskResponse>(`/api/joinquant/tasks/${taskId}`, {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  joinQuantAutomationPlan: (taskId: string, body: JoinQuantAutomationPlanRequest) =>
+    request<JoinQuantAutomationPlanResponse>(`/api/joinquant/tasks/${taskId}/automation-plan`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   getStrategyLifecycleOverview: (params: StrategyLifecycleQuery = {}) => {
@@ -666,6 +723,177 @@ export interface DailyIntelligenceResponse {
   live_trading: boolean;
 }
 
+export interface AShareSnapshotQuery {
+  trade_date?: string | null;
+  limit?: number;
+}
+
+export interface AShareStockSnapshotPayload {
+  trade_date?: string | null;
+  ticker: string;
+  ticker_name: string;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close: number;
+  volume?: number;
+  amount?: number | null;
+  turnover?: number | null;
+  pct_change?: number | null;
+  volume_ratio?: number | null;
+  sector_name?: string | null;
+  source?: string;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface AShareSectorSnapshotPayload {
+  trade_date?: string | null;
+  sector_id?: string | null;
+  sector_name: string;
+  sector_type?: string;
+  close?: number | null;
+  return?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  up_count?: number | null;
+  down_count?: number | null;
+  limit_up_count?: number | null;
+  member_count?: number | null;
+  leading_ticker?: string | null;
+  source?: string;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface AShareCollectionRunRequest {
+  trade_date?: string | null;
+  include_market?: boolean;
+  include_sector?: boolean;
+  include_news?: boolean;
+  include_announcements?: boolean;
+  stock_limit?: number;
+  sector_limit?: number;
+  anomaly_limit?: number;
+  document_limit?: number;
+  symbols?: string[] | null;
+  keywords?: string[] | null;
+  extract_events?: boolean;
+  continue_on_error?: boolean;
+  market_records?: AShareStockSnapshotPayload[] | null;
+  sector_records?: AShareSectorSnapshotPayload[] | null;
+  anomaly_source_records?: AShareStockSnapshotPayload[] | null;
+  documents?: DailyWorkflowDocumentPayload[] | null;
+}
+
+export interface AShareCollectorRun {
+  run_id: string;
+  run_date: string;
+  collector_type: string;
+  source_id: string;
+  status: string;
+  rows_requested: number;
+  rows_written: number;
+  error_message?: string | null;
+  metadata: Record<string, unknown>;
+  started_at?: string | null;
+  ended_at?: string | null;
+}
+
+export interface AShareCollectionStep {
+  name: string;
+  status: string;
+  message: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface AShareCollectionRunResponse {
+  status: string;
+  trade_date?: string | null;
+  step_count: number;
+  failed_step_count: number;
+  rows_written: number;
+  steps: AShareCollectionStep[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AShareMarketSnapshotRow {
+  trade_date: string;
+  ticker: string;
+  ticker_name: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  amount?: number | null;
+  turnover?: number | null;
+  limit_status: string;
+  suspended: boolean;
+  source: string;
+  created_at?: string | null;
+}
+
+export interface AShareMarketSnapshotResponse {
+  status: string;
+  trade_date: string;
+  row_count: number;
+  summary: {
+    sample_count: number;
+    limit_up_count: number;
+    suspended_count: number;
+    total_amount: number;
+    total_amount_yi: number;
+    anomaly_counts: Record<string, number>;
+  };
+  rows: AShareMarketSnapshotRow[];
+  collector_runs: AShareCollectorRun[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AShareSectorSnapshotRow {
+  trade_date: string;
+  sector_id: string;
+  sector_name: string;
+  return?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  up_count?: number | null;
+  down_count?: number | null;
+  limit_up_count?: number | null;
+  member_count?: number | null;
+  leading_ticker?: string | null;
+  source: string;
+  created_at?: string | null;
+}
+
+export interface AShareStockAnomalyRow {
+  trade_date: string;
+  ticker: string;
+  ticker_name: string;
+  anomaly_type: string;
+  pct_change?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  volume_ratio?: number | null;
+  limit_status: string;
+  sector_name?: string | null;
+  source: string;
+  evidence: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface AShareSectorAnomalySnapshotResponse {
+  status: string;
+  trade_date: string;
+  sector_count: number;
+  anomaly_count: number;
+  sectors: AShareSectorSnapshotRow[];
+  anomalies: AShareStockAnomalyRow[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
 export interface EventRecordQuery {
   limit?: number;
   event_type?: string | null;
@@ -898,6 +1126,54 @@ export interface JoinQuantExecutionReportImportResponse {
   live_trading: boolean;
 }
 
+export interface JoinQuantBacktestResultImportRequest {
+  jq_task_id?: string | null;
+  strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id?: string;
+  replace?: boolean;
+  evidence?: Record<string, unknown>[] | null;
+  result: Record<string, unknown>;
+}
+
+export interface JoinQuantBacktestResult {
+  run_id: string;
+  strategy_id: string;
+  start_date: string;
+  end_date: string;
+  benchmark: string;
+  total_return?: number | null;
+  annual_return?: number | null;
+  max_drawdown?: number | null;
+  sharpe?: number | null;
+  sortino?: number | null;
+  calmar?: number | null;
+  win_rate?: number | null;
+  profit_loss_ratio?: number | null;
+  turnover?: number | null;
+  trade_count?: number | null;
+  avg_holding_days?: number | null;
+  excess_return?: number | null;
+  information_ratio?: number | null;
+  status: string;
+  artifacts_path: string;
+}
+
+export interface JoinQuantBacktestResultImportResponse {
+  status: string;
+  run_id: string;
+  strategy_id: string;
+  source_idea_id?: string | null;
+  portfolio_id: string;
+  jq_task_id?: string | null;
+  backtest: JoinQuantBacktestResult;
+  task?: JoinQuantTask | null;
+  lifecycle?: Record<string, unknown> | null;
+  replace: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
 export interface JoinQuantExecutionReportListResponse {
   status: string;
   count: number;
@@ -1004,6 +1280,12 @@ export interface JoinQuantTaskUpdateRequest {
   error_message?: string | null;
 }
 
+export interface JoinQuantAutomationPlanRequest {
+  start_date?: string | null;
+  end_date?: string | null;
+  initial_cash?: number;
+}
+
 export interface JoinQuantTaskQuery {
   status?: string | null;
   limit?: number;
@@ -1044,7 +1326,26 @@ export interface JoinQuantTaskListResponse {
   live_trading: boolean;
 }
 
+export interface JoinQuantAutomationPlanResponse {
+  status: string;
+  task_id: string;
+  task: JoinQuantTask;
+  automation_mode: string;
+  backtest_window: {
+    start_date: string;
+    end_date: string;
+    initial_cash: number;
+  };
+  joinquant_research_script: string;
+  browser_steps: Record<string, unknown>[];
+  fallback_instruction: string;
+  safety_guardrails: Record<string, boolean>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
 export type DailyWorkflowStepName =
+  | "collect_public_data"
   | "collect_documents"
   | "extract_events"
   | "map_events"
@@ -2467,6 +2768,142 @@ export interface AlphaCompareResult {
   winner: string;
   ranking: AlphaCompareRow[];
   skipped: AlphaCompareSkip[];
+}
+
+export interface AdvisorSnapshotQuery {
+  portfolio_id?: string;
+  as_of_date?: string;
+  limit?: number;
+}
+
+export interface AdvisorSummaryCard {
+  label: string;
+  value: string | number | null;
+}
+
+export interface AdvisorActionItem {
+  type?: string;
+  ticker?: string;
+  ticker_name?: string;
+  action?: string;
+  label?: string;
+  reason?: string;
+  trigger?: string | number | null;
+  next_review_date?: string | null;
+}
+
+export interface AdvisorDiagnostic {
+  ticker: string;
+  ticker_name: string;
+  action: string;
+  action_label: string;
+  reason: string;
+  risk?: string;
+  current_price?: number | null;
+  next_review_date?: string | null;
+  sell_line?: Record<string, unknown> | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorCandidate {
+  ticker: string;
+  ticker_name: string;
+  suggested_status: string;
+  suggested_status_label: string;
+  reason: string;
+  buy_trigger_price?: number | null;
+  buy_trigger_condition?: string | null;
+  not_buy_conditions?: string | null;
+  max_position_pct?: number | null;
+  suggested_buy_shares?: number | null;
+  suggested_buy_amount?: number | null;
+  position_budget?: number | null;
+  sizing_price?: number | null;
+  risk_amount_at_stop?: number | null;
+  target_holding_days?: number | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorRiskItem {
+  ticker: string;
+  ticker_name: string;
+  rule_id: string;
+  rule_label: string;
+  severity: string;
+  reason: string;
+}
+
+export interface AdvisorExternalValidation {
+  validation_id: string;
+  source: string;
+  source_ref?: string | null;
+  subject_type: string;
+  subject_id?: string | null;
+  validation_date?: string | null;
+  status: string;
+  metrics: Record<string, unknown>;
+  summary?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+}
+
+export interface AdvisorTodaySnapshot {
+  snapshot_type: "today";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  summary_cards: AdvisorSummaryCard[];
+  primary_actions: AdvisorActionItem[];
+  holding_action_counts: Record<string, number>;
+  candidate_status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  data_freshness: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorHoldingsSnapshot {
+  snapshot_type: "holdings";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  portfolio_summary: Record<string, unknown>;
+  diagnostics: AdvisorDiagnostic[];
+  prices: Record<string, unknown>[];
+  action_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorWatchlistSnapshot {
+  snapshot_type: "watchlist";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  candidates: AdvisorCandidate[];
+  do_not_buy_items: AdvisorRiskItem[];
+  status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorJournalSnapshot {
+  snapshot_type: "journal";
+  title: string;
+  portfolio_id: string;
+  headline: string;
+  commands: Record<string, unknown>[];
+  recommendations: Record<string, unknown>[];
+  external_validations: AdvisorExternalValidation[];
+  alerts?: Record<string, unknown>[];
+  decision_journals?: Record<string, unknown>[];
+  record_count: number;
+  research_only: boolean;
+  live_trading: boolean;
 }
 
 // --- Connector runtime channel types ---
