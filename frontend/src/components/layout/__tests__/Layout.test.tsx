@@ -19,10 +19,10 @@ function renderLayout() {
 }
 
 describe("Layout A-share navigation", () => {
-  it("renders the PR-02 Chinese A-share navigation shell", () => {
+  it("renders only the current advisor navigation shell", () => {
     renderLayout();
 
-    expect(screen.getByText("A 股策略中台")).toBeInTheDocument();
+    expect(screen.getByText("投资助手")).toBeInTheDocument();
     for (const label of ASHARE_NAV_LABELS_ZH) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -33,6 +33,18 @@ describe("Layout A-share navigation", () => {
   it("hides legacy generic trading routes from the sidebar", () => {
     renderLayout();
 
+    expect(screen.queryByText("A 股驾驶舱")).not.toBeInTheDocument();
+    expect(screen.queryByText("事件记录库")).not.toBeInTheDocument();
+    expect(screen.queryByText("板块及股票分析")).not.toBeInTheDocument();
+    expect(screen.queryByText("策略实验室")).not.toBeInTheDocument();
+    expect(screen.queryByText("回测结果")).not.toBeInTheDocument();
+    expect(screen.queryByText("风控组合")).not.toBeInTheDocument();
+    expect(screen.queryByText("交易计划")).not.toBeInTheDocument();
+    expect(screen.queryByText("聚宽任务中心")).not.toBeInTheDocument();
+    expect(screen.queryByText("策略生命周期")).not.toBeInTheDocument();
+    expect(screen.queryByText("每日工作流")).not.toBeInTheDocument();
+    expect(screen.queryByText("数据源设置")).not.toBeInTheDocument();
+    expect(screen.queryByText("系统设置")).not.toBeInTheDocument();
     expect(screen.queryByText("智能体")).not.toBeInTheDocument();
     expect(screen.queryByText("运行时")).not.toBeInTheDocument();
     expect(screen.queryByText("Alpha 动物园")).not.toBeInTheDocument();

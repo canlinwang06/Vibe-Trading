@@ -3,7 +3,7 @@
     "version": "v0.1.9"
   },
   "layout": {
-    "productName": "A 股策略中台",
+    "productName": "投资助手",
     "dashboard": "A 股驾驶舱",
     "advisorToday": "今日建议",
     "advisorHoldings": "我的持仓",

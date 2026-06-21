@@ -2,22 +2,13 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import {
-  BarChart3,
   BriefcaseBusiness,
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
-  Database,
-  FileText,
-  FlaskConical,
   Gauge,
   Languages,
-  Layers,
-  ListChecks,
   Moon,
-  Radar,
-  Settings,
-  ShieldCheck,
   Sun,
   Target,
 } from "lucide-react";
@@ -34,26 +25,10 @@ export function Layout() {
   const { t, i18n: i18nHook } = useTranslation();
 
   const iconByRoute = {
-    "/": Gauge,
     "/advisor/today": Gauge,
     "/advisor/holdings": BriefcaseBusiness,
     "/advisor/watchlist": Target,
     "/advisor/journal": ClipboardList,
-    "/event-records": ClipboardList,
-    "/sector-stock-analysis": Layers,
-    "/event-radar": Radar,
-    "/sector-radar": Layers,
-    "/event-reactions": BarChart3,
-    "/candidate-pool": Target,
-    "/strategy-lab": FlaskConical,
-    "/backtest-results": BarChart3,
-    "/risk-portfolio": ShieldCheck,
-    "/trade-plan": ClipboardList,
-    "/joinquant-export": FileText,
-    "/strategy-lifecycle": ListChecks,
-    "/daily-workflow": ListChecks,
-    "/data-sources": Database,
-    "/settings": Settings,
   };
   const { pathname } = useLocation();
   const { dark, toggle } = useDarkMode();
@@ -74,7 +49,7 @@ export function Layout() {
       )}>
         {/* Brand */}
         <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
-          <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
+          <Link to="/advisor/today" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BriefcaseBusiness className="h-5 w-5 text-primary shrink-0" />
             {!collapsed && <span className="truncate">{t("layout.productName")}</span>}
           </Link>
@@ -92,7 +67,7 @@ export function Layout() {
                 className={cn(
                   "flex items-center rounded-md text-sm transition-colors",
                   collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
-                  (to === "/" ? pathname === "/" : pathname.startsWith(to))
+                  pathname.startsWith(to)
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
