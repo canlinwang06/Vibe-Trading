@@ -3297,6 +3297,9 @@ register_alpha_routes(app)
 from src.api.ashare_routes import register_ashare_routes  # noqa: E402
 register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
 
+from src.api.ashare_collection_routes import register_ashare_collection_routes  # noqa: E402
+register_ashare_collection_routes(app, require_local_or_auth=require_local_or_auth)
+
 from src.api.ashare_dashboard_routes import register_ashare_dashboard_routes  # noqa: E402
 register_ashare_dashboard_routes(app, require_local_or_auth=require_local_or_auth)
 

@@ -47,7 +47,7 @@ class WorkflowDocumentPayload(BaseModel):
 class DailyWorkflowRunRequest(BaseModel):
     workflow_date: str | None = Field(default=None, min_length=10, max_length=10)
     portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
-    steps: list[str] | None = Field(default=None, max_length=11)
+    steps: list[str] | None = Field(default=None, max_length=12)
     documents: list[WorkflowDocumentPayload] = Field(default_factory=list, max_length=100)
     dry_run: bool = False
     continue_on_error: bool = False

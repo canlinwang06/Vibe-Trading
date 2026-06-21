@@ -30,6 +30,16 @@ class JoinQuantExecutionReportImportRequest(BaseModel):
     reports: list[dict[str, Any]] = Field(min_length=1, max_length=500)
 
 
+class JoinQuantBacktestResultImportRequest(BaseModel):
+    jq_task_id: str | None = Field(default=None, max_length=120)
+    strategy_id: str | None = Field(default=None, max_length=120)
+    source_idea_id: str | None = Field(default=None, max_length=120)
+    portfolio_id: str = Field(default="cn_a_main", min_length=3, max_length=80)
+    replace: bool = False
+    evidence: list[dict[str, Any]] | None = Field(default=None, max_length=50)
+    result: dict[str, Any]
+
+
 def _service() -> JoinQuantExportService:
     return JoinQuantExportService()
 
@@ -123,6 +133,21 @@ def register_joinquant_routes(app: FastAPI, require_local_or_auth: AuthDep | Non
                 jq_task_id=payload.jq_task_id,
                 replace=payload.replace,
                 reports=payload.reports,
+            )
+        except JoinQuantExportError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/joinquant/backtest-results/import", dependencies=[Depends(auth)])
+    def import_backtest_result(payload: JoinQuantBacktestResultImportRequest) -> dict[str, Any]:
+        try:
+            return _service().import_backtest_result(
+                result=payload.result,
+                jq_task_id=payload.jq_task_id,
+                strategy_id=payload.strategy_id,
+                source_idea_id=payload.source_idea_id,
+                portfolio_id=payload.portfolio_id,
+                replace=payload.replace,
+                evidence=payload.evidence,
             )
         except JoinQuantExportError as exc:
             raise _http_error(exc) from exc

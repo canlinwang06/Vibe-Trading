@@ -28,6 +28,12 @@ class JoinQuantTaskUpdateRequest(BaseModel):
     error_message: str | None = Field(default=None, max_length=1000)
 
 
+class JoinQuantAutomationPlanRequest(BaseModel):
+    start_date: str | None = Field(default=None, min_length=10, max_length=10)
+    end_date: str | None = Field(default=None, min_length=10, max_length=10)
+    initial_cash: float = Field(default=1_000_000, gt=0)
+
+
 def _service() -> JoinQuantTaskService:
     return JoinQuantTaskService()
 
@@ -98,3 +104,15 @@ def register_joinquant_task_routes(app: FastAPI, require_local_or_auth: AuthDep 
         except JoinQuantTaskError as exc:
             raise _http_error(exc) from exc
         return {"status": "ok", "task": task, "research_only": True, "live_trading": False}
+
+    @app.post("/api/joinquant/tasks/{task_id}/automation-plan", dependencies=[Depends(auth)])
+    def create_automation_plan(task_id: str, payload: JoinQuantAutomationPlanRequest) -> dict[str, Any]:
+        try:
+            return _service().automation_plan(
+                task_id,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+                initial_cash=payload.initial_cash,
+            )
+        except JoinQuantTaskError as exc:
+            raise _http_error(exc) from exc

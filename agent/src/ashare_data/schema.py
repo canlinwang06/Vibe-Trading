@@ -271,6 +271,24 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         """,
     ),
     TableSpec(
+        "collector_runs",
+        """
+        CREATE TABLE IF NOT EXISTS collector_runs (
+          run_id VARCHAR PRIMARY KEY,
+          run_date DATE,
+          collector_type VARCHAR,
+          source_id VARCHAR,
+          status VARCHAR,
+          rows_requested INTEGER,
+          rows_written INTEGER,
+          error_message TEXT,
+          metadata_json TEXT,
+          started_at TIMESTAMP,
+          ended_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
         "sector_daily",
         """
         CREATE TABLE IF NOT EXISTS sector_daily (
@@ -292,6 +310,27 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
           source VARCHAR,
           created_at TIMESTAMP,
           PRIMARY KEY (trade_date, sector_id)
+        )
+        """,
+    ),
+    TableSpec(
+        "stock_anomaly_snapshots",
+        """
+        CREATE TABLE IF NOT EXISTS stock_anomaly_snapshots (
+          trade_date DATE,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          anomaly_type VARCHAR,
+          pct_change DOUBLE,
+          amount DOUBLE,
+          turnover DOUBLE,
+          volume_ratio DOUBLE,
+          limit_status VARCHAR,
+          sector_name VARCHAR,
+          source VARCHAR,
+          evidence_json TEXT,
+          created_at TIMESTAMP,
+          PRIMARY KEY (trade_date, ticker, anomaly_type)
         )
         """,
     ),

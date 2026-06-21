@@ -9,6 +9,11 @@ from typing import Any
 
 from src.ashare_data.store import AShareDataStore
 from src.joinquant_adapter.service import JoinQuantExportError, JoinQuantExportService
+from src.joinquant_orchestration.backtest_adapter import (
+    build_browser_automation_steps,
+    build_joinquant_research_script,
+    default_backtest_window,
+)
 
 
 class JoinQuantTaskError(RuntimeError):
@@ -211,6 +216,55 @@ class JoinQuantTaskService:
                 ],
             )
         return self.get_task(task_id)
+
+    def automation_plan(
+        self,
+        task_id: str,
+        *,
+        start_date: str | date | datetime | None = None,
+        end_date: str | date | datetime | None = None,
+        initial_cash: float = 1_000_000,
+    ) -> dict[str, Any]:
+        """Return Codex-readable artifacts for a human-authorized JoinQuant backtest."""
+        task = self.get_task(task_id)
+        if task["task_type"] != "backtest":
+            raise JoinQuantTaskError("当前自动回测适配器仅支持 backtest 任务。")
+        default_start, default_end = default_backtest_window(task["signal_date"])
+        resolved_start = _parse_date(start_date, "start_date") if start_date else default_start
+        resolved_end = _parse_date(end_date, "end_date") if end_date else default_end
+        if resolved_start > resolved_end:
+            raise JoinQuantTaskError("start_date 不能晚于 end_date。")
+        if initial_cash <= 0:
+            raise JoinQuantTaskError("initial_cash 必须大于 0。")
+        script = build_joinquant_research_script(
+            task=task,
+            start_date=resolved_start,
+            end_date=resolved_end,
+            initial_cash=initial_cash,
+        )
+        return {
+            "status": "ok",
+            "task_id": task["task_id"],
+            "task": task,
+            "automation_mode": "codex_human_authorized",
+            "backtest_window": {
+                "start_date": resolved_start.isoformat(),
+                "end_date": resolved_end.isoformat(),
+                "initial_cash": float(initial_cash),
+            },
+            "joinquant_research_script": script,
+            "browser_steps": build_browser_automation_steps(task=task),
+            "fallback_instruction": task["fallback_instruction"],
+            "safety_guardrails": {
+                "stores_joinquant_password": False,
+                "bypasses_captcha": False,
+                "submits_live_orders": False,
+                "requires_user_logged_in_browser": True,
+                "requires_human_confirmation": True,
+            },
+            "research_only": True,
+            "live_trading": False,
+        }
 
     def _build_task_package(
         self,

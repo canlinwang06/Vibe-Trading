@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Iterable, Sequence
 
+from src.ashare_data.collection import AShareDataCollectionError, AShareDataCollectionService
 from src.ashare_data.store import AShareDataStore
 from src.candidate_pool.service import CandidatePoolError, CandidatePoolService
 from src.event_radar.event_extraction import EventExtractionError, EventExtractionService
@@ -26,6 +27,7 @@ from src.strategy_lab.ranking import StrategyRankingError, StrategyRankingServic
 from src.strategy_lab.service import StrategyLabError, StrategyLabService
 
 ALLOWED_WORKFLOW_STEPS: tuple[str, ...] = (
+    "collect_public_data",
     "collect_documents",
     "extract_events",
     "map_events",
@@ -50,6 +52,7 @@ DEFAULT_WORKFLOW_STEPS: tuple[str, ...] = (
 )
 
 WORKFLOW_ERRORS = (
+    AShareDataCollectionError,
     EventSourceIngestionError,
     EventExtractionError,
     EventMappingError,
@@ -214,6 +217,7 @@ class DailyWorkflowService:
     def _run_step(self, step_name: str, context: dict[str, Any]) -> dict[str, Any]:
         runners: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "collect_documents": self._collect_documents,
+            "collect_public_data": self._collect_public_data,
             "extract_events": self._extract_events,
             "map_events": self._map_events,
             "score_sectors": self._score_sectors,
@@ -227,6 +231,22 @@ class DailyWorkflowService:
             "calculate_event_reactions": self._calculate_event_reactions,
         }
         return runners[step_name](context)
+
+    def _collect_public_data(self, context: dict[str, Any]) -> dict[str, Any]:
+        result = AShareDataCollectionService(store=self.store).collect_daily_package(
+            trade_date=context["workflow_date"],
+            include_market=True,
+            include_sector=True,
+            include_news=True,
+            include_announcements=True,
+            extract_events=False,
+            continue_on_error=True,
+        )
+        return _ok_step(
+            "collect_public_data",
+            f"已完成公开数据采集，写入 {result['rows_written']} 条记录。",
+            _summarize_result(result),
+        )
 
     def _collect_documents(self, context: dict[str, Any]) -> dict[str, Any]:
         service = EventSourceIngestionService(store=self.store)
@@ -488,6 +508,7 @@ def _blocked_step(name: str, message: str) -> dict[str, Any]:
 
 def _planned_message(step: str) -> str:
     return {
+        "collect_public_data": "将从免费公开来源采集行情、板块异动、公告和财经新闻。",
         "collect_documents": "将确认默认信息源，并在有手工文档时导入本地库。",
         "extract_events": "将从本地原始文档抽取结构化事件。",
         "map_events": "将用本地主题映射把事件关联到板块和股票。",

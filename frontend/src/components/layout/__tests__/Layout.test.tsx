@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { ASHARE_NAV_LABELS_ZH } from "@/config/ashareNavigation";
 import i18n from "@/i18n";
 import { Layout } from "../Layout";
 
@@ -22,21 +23,7 @@ describe("Layout A-share navigation", () => {
     renderLayout();
 
     expect(screen.getByText("A 股策略中台")).toBeInTheDocument();
-    for (const label of [
-      "A 股驾驶舱",
-      "事件雷达",
-      "板块雷达",
-      "事件反应",
-      "候选股票池",
-      "策略实验室",
-      "回测结果",
-      "风控组合",
-      "交易计划",
-      "聚宽导出",
-      "每日工作流",
-      "数据源设置",
-      "系统设置",
-    ]) {
+    for (const label of ASHARE_NAV_LABELS_ZH) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.getByRole("button", { name: "切换语言" })).toBeInTheDocument();

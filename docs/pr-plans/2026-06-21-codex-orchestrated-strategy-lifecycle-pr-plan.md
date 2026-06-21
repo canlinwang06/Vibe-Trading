@@ -45,6 +45,22 @@
 - PR-08、PR-09、PR-10 中的“自动互联网采集器”仍建议继续拆成独立小 PR，逐个接入真实数据源和失败重试机制。
 - PR-14 的聚宽浏览器自动化应继续保持人工授权，不保存账号密码，不绕过验证码。
 
+## 2026-06-21 执行更新：PR-08、PR-09、PR-10、PR-14、PR-15
+
+本轮已补齐剩余 5 个实现 PR 的本地代码：
+
+- PR-08：新增公开数据采集服务和 `/api/ashare/collection/run`、`/api/ashare/market-snapshot`，可将 A 股行情快照写入 `market_daily`，并记录 `collector_runs`。
+- PR-09：新增板块与个股异动采集，写入 `sector_daily` 和 `stock_anomaly_snapshots`，支持涨停、跌停、强势、放量和高成交额异动摘要。
+- PR-10：公告、政策和财经新闻可通过同一采集入口写入 `raw_documents`，并可继续触发本地事件抽取。
+- PR-14：新增聚宽自动回测适配器，可按 task_id 生成 JoinQuant 研究环境脚本、Codex 浏览器操作步骤和安全边界说明。
+- PR-15：新增 `/api/joinquant/backtest-results/import`，支持将聚宽回测结果写入 `backtest_runs`、回填 `jq_orchestration_tasks`，并刷新策略生命周期。
+
+验收补充：
+
+- 新增采集器 mock 测试，覆盖行情、板块、异动、新闻公告、事件抽取和快照 API。
+- 新增聚宽自动化计划测试，覆盖 `create_backtest` / `get_backtest` 脚本生成和安全边界。
+- 新增聚宽回测结果写回测试，覆盖结果规范化、幂等写入、任务回填和生命周期刷新。
+
 ## PR-07：可信互联网数据源注册
 
 目标：建立可信互联网数据源框架，支持官方、行情、财经媒体和社交线索分层。

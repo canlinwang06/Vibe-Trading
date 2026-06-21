@@ -26,7 +26,9 @@ EXPECTED_PR03_TABLES = (
     "event_stock_map",
     "event_reactions",
     "market_daily",
+    "collector_runs",
     "sector_daily",
+    "stock_anomaly_snapshots",
     "sector_scores",
     "candidate_pool",
     "strategy_specs",
@@ -35,6 +37,9 @@ EXPECTED_PR03_TABLES = (
     "strategy_allocations",
     "execution_signals",
     "jq_execution_reports",
+    "jq_orchestration_tasks",
+    "strategy_lifecycle",
+    "strategy_lifecycle_events",
 )
 
 
@@ -82,6 +87,16 @@ def test_initialize_store_is_idempotent_and_preserves_existing_rows(tmp_path: Pa
     assert row == ("600519.SH", "贵州茅台", "CN_A", True)
 
 
+def test_store_reads_tables_while_write_connection_is_open(tmp_path: Path) -> None:
+    """The local API may inspect schema while another request holds a write connection."""
+    store = AShareDataStore(database_path=tmp_path / "ashare.duckdb")
+    store.initialize()
+
+    with store.connect(read_only=False) as conn:
+        conn.execute("SELECT 1").fetchone()
+        assert store.list_tables() == EXPECTED_PR03_TABLES
+
+
 def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     """Tables should expose the key fields from the product requirements."""
     store = AShareDataStore(database_path=tmp_path / "ashare.duckdb")
@@ -124,6 +139,12 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     )
     assert {"report_id", "order_status", "raw_report", "error_message"}.issubset(
         store.table_columns("jq_execution_reports")
+    )
+    assert {"run_id", "collector_type", "rows_written", "error_message"}.issubset(
+        store.table_columns("collector_runs")
+    )
+    assert {"anomaly_type", "pct_change", "volume_ratio", "evidence_json"}.issubset(
+        store.table_columns("stock_anomaly_snapshots")
     )
     assert {"reaction_id", "window", "abnormal_return", "max_drawdown"}.issubset(
         store.table_columns("event_reactions")

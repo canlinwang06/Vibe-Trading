@@ -131,6 +131,26 @@ def _seed_backtest_runs(store: AShareDataStore, *, max_drawdown: float = -0.06) 
         )
 
 
+def _seed_strategy_spec_for_jq_result(store: AShareDataStore) -> None:
+    store.initialize()
+    with store.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO strategy_specs (
+              strategy_id, strategy_name, market, strategy_type, params_json,
+              rebalance_freq, holding_period, max_position, max_sector_exposure,
+              max_total_exposure, stop_loss, take_profit, enabled,
+              created_at, updated_at
+            )
+            VALUES (
+              'spec_ai', 'AI算力热点策略', 'CN_A', 'hot_sector_equal_weight',
+              '{"theme":"AI算力"}', 'weekly', 5, 0.08, 0.35, 0.65,
+              0.08, 0.18, true, now(), now()
+            )
+            """
+        )
+
+
 def test_joinquant_ticker_mapping_examples() -> None:
     assert map_ticker("600519.SH") == "600519.XSHG"
     assert map_ticker("300750.SZ") == "300750.XSHE"
@@ -406,6 +426,100 @@ def test_import_execution_reports_can_replace_existing_trade_date(
     assert reports[0]["ticker"] == "600519.SH"
 
 
+def test_import_backtest_result_writes_backtest_task_and_lifecycle(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_strategy_spec_for_jq_result(store)
+    task_service = JoinQuantTaskService(store=store)
+    task = task_service.create_task(
+        source_strategy_id="spec_ai",
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+    )
+
+    imported = exporter.import_backtest_result(
+        jq_task_id=task["task_id"],
+        result={
+            "start_date": "2026-01-01",
+            "end_date": "2026-06-23",
+            "benchmark": "000300.SH",
+            "total_return": 0.16,
+            "annual_return": 0.24,
+            "max_drawdown": 0.08,
+            "sharpe": 1.36,
+            "win_rate": 56,
+            "trade_count": 42,
+            "excess_return": 0.06,
+            "status": "completed",
+        },
+        evidence=[{"type": "screenshot", "path": "local://joinquant/backtest.png"}],
+    )
+    updated_task = task_service.get_task(task["task_id"])
+
+    assert imported["status"] == "ok"
+    assert imported["strategy_id"] == "spec_ai"
+    assert imported["backtest"]["max_drawdown"] == pytest.approx(-0.08)
+    assert imported["backtest"]["win_rate"] == pytest.approx(0.56)
+    assert updated_task["status"] == "completed"
+    assert updated_task["result_summary"]["source"] == "joinquant_backtest_import"
+    assert updated_task["evidence"][0]["type"] == "joinquant_backtest_result"
+    assert imported["lifecycle"]["status"] == "ok"
+
+    with store.connect(read_only=True) as conn:
+        run = conn.execute(
+            "SELECT strategy_id, annual_return, max_drawdown, status FROM backtest_runs WHERE run_id = ?",
+            [imported["run_id"]],
+        ).fetchone()
+        lifecycle = conn.execute(
+            "SELECT strategy_id, backtest_count, best_annual_return FROM strategy_lifecycle WHERE strategy_id = 'spec_ai'"
+        ).fetchone()
+
+    assert run == ("spec_ai", 0.24, -0.08, "completed")
+    assert lifecycle[0] == "spec_ai"
+    assert lifecycle[1] == 1
+    assert lifecycle[2] == pytest.approx(0.24)
+
+
+def test_import_backtest_result_requires_replace_for_existing_run(
+    exporter: JoinQuantExportService,
+    store: AShareDataStore,
+) -> None:
+    _seed_strategy_spec_for_jq_result(store)
+    task_service = JoinQuantTaskService(store=store)
+    task = task_service.create_task(
+        source_strategy_id="spec_ai",
+        portfolio_id="cn_a_main",
+        signal_date="2026-06-23",
+    )
+    payload = {
+        "run_id": "jq_bt_duplicate_guard",
+        "start_date": "2026-01-01",
+        "end_date": "2026-06-23",
+        "benchmark": "000300.SH",
+        "annual_return": 0.24,
+        "max_drawdown": -0.08,
+        "status": "completed",
+    }
+
+    exporter.import_backtest_result(jq_task_id=task["task_id"], result=payload)
+    with pytest.raises(JoinQuantExportError, match="已存在"):
+        exporter.import_backtest_result(jq_task_id=task["task_id"], result=payload)
+
+    replaced = exporter.import_backtest_result(
+        jq_task_id=task["task_id"],
+        result={**payload, "annual_return": 0.31},
+        replace=True,
+    )
+
+    assert replaced["replace"] is True
+    with store.connect(read_only=True) as conn:
+        annual_return = conn.execute(
+            "SELECT annual_return FROM backtest_runs WHERE run_id = 'jq_bt_duplicate_guard'"
+        ).fetchone()[0]
+    assert annual_return == pytest.approx(0.31)
+
+
 def test_import_execution_reports_rejects_unmapped_ticker(
     exporter: JoinQuantExportService,
     store: AShareDataStore,
@@ -566,6 +680,7 @@ def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     store = AShareDataStore()
     _seed_signals(store)
     _seed_backtest_runs(store, max_drawdown=-0.06)
+    _seed_strategy_spec_for_jq_result(store)
 
     preflight = client.post(
         "/api/joinquant/export/preflight",
@@ -610,6 +725,42 @@ def test_joinquant_export_api_round_trip(client: TestClient) -> None:
     assert copy_package.status_code == 200
     assert copy_package.json()["manifest"]["target_count"] == 3
     assert copy_package.json()["manifest"]["live_trading"] is False
+
+    task_create = client.post(
+        "/api/joinquant/tasks",
+        json={"source_strategy_id": "spec_ai", "portfolio_id": "cn_a_main", "signal_date": "2026-06-23"},
+    )
+    assert task_create.status_code == 200
+    task_id = task_create.json()["task"]["task_id"]
+
+    automation = client.post(
+        f"/api/joinquant/tasks/{task_id}/automation-plan",
+        json={"start_date": "2026-01-01", "end_date": "2026-06-23", "initial_cash": 500000},
+    )
+    assert automation.status_code == 200
+    assert "create_backtest" in automation.json()["joinquant_research_script"]
+
+    backtest_import = client.post(
+        "/api/joinquant/backtest-results/import",
+        json={
+            "jq_task_id": task_id,
+            "result": {
+                "start_date": "2026-01-01",
+                "end_date": "2026-06-23",
+                "annual_return": 0.24,
+                "total_return": 0.16,
+                "max_drawdown": -0.08,
+                "sharpe": 1.36,
+                "win_rate": 0.56,
+                "trade_count": 42,
+                "status": "completed",
+            },
+            "evidence": [{"type": "screenshot", "path": "local://joinquant/backtest.png"}],
+        },
+    )
+    assert backtest_import.status_code == 200
+    assert backtest_import.json()["strategy_id"] == "spec_ai"
+    assert backtest_import.json()["lifecycle"]["status"] == "ok"
 
     report_import = client.post(
         "/api/joinquant/execution-reports/import",

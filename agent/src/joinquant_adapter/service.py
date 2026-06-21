@@ -415,6 +415,145 @@ class JoinQuantExportService:
             "live_trading": False,
         }
 
+    def import_backtest_result(
+        self,
+        *,
+        result: dict[str, Any],
+        jq_task_id: str | None = None,
+        strategy_id: str | None = None,
+        source_idea_id: str | None = None,
+        portfolio_id: str = "cn_a_main",
+        replace: bool = False,
+        evidence: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a JoinQuant backtest result into local backtest and task tables."""
+        self.store.initialize()
+        normalized = self._normalize_backtest_result(
+            result=result,
+            jq_task_id=jq_task_id,
+            strategy_id=strategy_id,
+            source_idea_id=source_idea_id,
+            portfolio_id=portfolio_id,
+        )
+        now = _utc_now()
+        with self.store.connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM backtest_runs WHERE run_id = ?",
+                [normalized["run_id"]],
+            ).fetchone()
+            if existing and not replace:
+                raise JoinQuantExportError(
+                    f"聚宽回测结果 {normalized['run_id']} 已存在；如需覆盖请设置 replace=true。"
+                )
+            if existing:
+                conn.execute("DELETE FROM backtest_runs WHERE run_id = ?", [normalized["run_id"]])
+            conn.execute(
+                """
+                INSERT INTO backtest_runs (
+                  run_id, strategy_id, market, start_date, end_date, universe_id,
+                  benchmark, total_return, annual_return, max_drawdown, sharpe,
+                  sortino, calmar, win_rate, profit_loss_ratio, turnover,
+                  trade_count, avg_holding_days, excess_return, information_ratio,
+                  status, artifacts_path, created_at
+                )
+                VALUES (?, ?, 'CN_A', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    normalized["run_id"],
+                    normalized["strategy_id"],
+                    normalized["start_date"],
+                    normalized["end_date"],
+                    normalized["universe_id"],
+                    normalized["benchmark"],
+                    normalized["total_return"],
+                    normalized["annual_return"],
+                    normalized["max_drawdown"],
+                    normalized["sharpe"],
+                    normalized["sortino"],
+                    normalized["calmar"],
+                    normalized["win_rate"],
+                    normalized["profit_loss_ratio"],
+                    normalized["turnover"],
+                    normalized["trade_count"],
+                    normalized["avg_holding_days"],
+                    normalized["excess_return"],
+                    normalized["information_ratio"],
+                    normalized["status"],
+                    normalized["artifacts_path"],
+                    now,
+                ],
+            )
+        task: dict[str, Any] | None = None
+        if normalized["jq_task_id"]:
+            task = self._write_backtest_to_task(
+                normalized["jq_task_id"],
+                normalized,
+                evidence or [],
+            )
+        lifecycle: dict[str, Any] | None = None
+        try:
+            from src.strategy_lifecycle.service import StrategyLifecycleService
+
+            rows = StrategyLifecycleService(store=self.store).refresh_lifecycle()
+            lifecycle = {
+                "status": "ok",
+                "refreshed_count": len(rows),
+                "strategy_id": normalized["strategy_id"],
+            }
+        except Exception as exc:  # noqa: BLE001 - lifecycle refresh must not drop the imported backtest
+            lifecycle = {"status": "warning", "message": str(exc), "strategy_id": normalized["strategy_id"]}
+
+        return {
+            "status": "ok" if normalized["status"] == "completed" else "needs_review",
+            "run_id": normalized["run_id"],
+            "strategy_id": normalized["strategy_id"],
+            "source_idea_id": normalized["source_idea_id"],
+            "portfolio_id": normalized["portfolio_id"],
+            "jq_task_id": normalized["jq_task_id"],
+            "backtest": self._public_backtest_result(normalized),
+            "task": task,
+            "lifecycle": lifecycle,
+            "replace": replace,
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def _write_backtest_to_task(
+        self,
+        jq_task_id: str,
+        normalized: dict[str, Any],
+        evidence: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        try:
+            from src.joinquant_orchestration.service import JoinQuantTaskError, JoinQuantTaskService
+
+            task_service = JoinQuantTaskService(store=self.store)
+            task = task_service.update_task(
+                jq_task_id,
+                status="completed" if normalized["status"] == "completed" else "failed",
+                result_summary={
+                    "source": "joinquant_backtest_import",
+                    "run_id": normalized["run_id"],
+                    "strategy_id": normalized["strategy_id"],
+                    "metrics": self._public_backtest_result(normalized),
+                },
+                evidence=[
+                    {
+                        "type": "joinquant_backtest_result",
+                        "run_id": normalized["run_id"],
+                        "strategy_id": normalized["strategy_id"],
+                        "start_date": normalized["start_date"].isoformat(),
+                        "end_date": normalized["end_date"].isoformat(),
+                        "status": normalized["status"],
+                    },
+                    *evidence,
+                ],
+                error_message=None if normalized["status"] == "completed" else "聚宽回测结果未完成或失败。",
+            )
+        except JoinQuantTaskError as exc:
+            raise JoinQuantExportError(f"聚宽任务写回失败: {exc}") from exc
+        return task
+
     def _write_summary_to_task(self, jq_task_id: str | None, summary: dict[str, Any]) -> str | None:
         clean_task_id = (jq_task_id or "").strip()
         if not clean_task_id:
@@ -1132,6 +1271,155 @@ class JoinQuantExportService:
             normalized.append(normalized_row)
         self._fill_missing_planned_weights(normalized)
         return normalized
+
+    def _normalize_backtest_result(
+        self,
+        *,
+        result: dict[str, Any],
+        jq_task_id: str | None,
+        strategy_id: str | None,
+        source_idea_id: str | None,
+        portfolio_id: str,
+    ) -> dict[str, Any]:
+        if not isinstance(result, dict) or not result:
+            raise JoinQuantExportError("聚宽回测结果不能为空。")
+        task = self._task_for_backtest(jq_task_id)
+        task_strategy_id = task.get("source_strategy_id") if task else None
+        task_idea_id = task.get("source_idea_id") if task else None
+        task_portfolio_id = task.get("portfolio_id") if task else None
+        task_signal_date = _parse_date(task.get("signal_date") if task else None, field_name="signal_date")
+        resolved_strategy_id = str(
+            result.get("strategy_id")
+            or strategy_id
+            or task_strategy_id
+            or task_idea_id
+            or ""
+        ).strip()
+        if not resolved_strategy_id:
+            raise JoinQuantExportError("聚宽回测结果缺少 strategy_id，且任务中也没有可关联的策略。")
+        resolved_idea_id = str(result.get("source_idea_id") or source_idea_id or task_idea_id or "").strip() or None
+        resolved_portfolio_id = str(result.get("portfolio_id") or task_portfolio_id or portfolio_id).strip()
+        end_date = _parse_date(
+            result.get("end_date") or result.get("回测结束日期") or task_signal_date or _utc_now().date(),
+            field_name="end_date",
+        )
+        start_date = _parse_date(
+            result.get("start_date") or result.get("回测开始日期") or (end_date - timedelta(days=180)),
+            field_name="start_date",
+        )
+        if start_date is None or end_date is None:
+            raise JoinQuantExportError("聚宽回测结果缺少 start_date 或 end_date。")
+        if start_date > end_date:
+            raise JoinQuantExportError("聚宽回测 start_date 不能晚于 end_date。")
+        run_id = str(
+            result.get("run_id")
+            or result.get("backtest_id")
+            or self._backtest_run_id(
+                jq_task_id=jq_task_id,
+                strategy_id=resolved_strategy_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        )
+        status_raw = str(result.get("status") or result.get("状态") or "completed").strip().lower()
+        status = "completed" if status_raw in {"ok", "completed", "complete", "success", "done", "成功"} else "failed"
+        max_drawdown = self._metric(result, "max_drawdown", "最大回撤")
+        if max_drawdown is not None and max_drawdown > 0:
+            max_drawdown = -max_drawdown
+        win_rate = self._metric(result, "win_rate", "胜率")
+        if win_rate is not None and win_rate > 1:
+            win_rate = win_rate / 100
+        return {
+            "run_id": run_id,
+            "strategy_id": resolved_strategy_id,
+            "source_idea_id": resolved_idea_id,
+            "portfolio_id": resolved_portfolio_id,
+            "jq_task_id": jq_task_id.strip() if jq_task_id else None,
+            "start_date": start_date,
+            "end_date": end_date,
+            "universe_id": str(result.get("universe_id") or result.get("universe") or "joinquant_cn_a"),
+            "benchmark": str(result.get("benchmark") or result.get("基准") or "000300.SH"),
+            "total_return": self._metric(result, "total_return", "累计收益", "收益率"),
+            "annual_return": self._metric(result, "annual_return", "年化收益", "年化收益率"),
+            "max_drawdown": max_drawdown,
+            "sharpe": self._metric(result, "sharpe", "夏普", "Sharpe"),
+            "sortino": self._metric(result, "sortino", "Sortino"),
+            "calmar": self._metric(result, "calmar", "Calmar"),
+            "win_rate": win_rate,
+            "profit_loss_ratio": self._metric(result, "profit_loss_ratio", "盈亏比"),
+            "turnover": self._metric(result, "turnover", "换手率"),
+            "trade_count": self._int_metric(result, "trade_count", "交易次数"),
+            "avg_holding_days": self._metric(result, "avg_holding_days", "平均持仓天数"),
+            "excess_return": self._metric(result, "excess_return", "超额收益"),
+            "information_ratio": self._metric(result, "information_ratio", "信息比率"),
+            "status": status,
+            "artifacts_path": str(result.get("artifacts_path") or result.get("artifact_url") or f"joinquant://{jq_task_id or run_id}"),
+            "raw_result": result,
+        }
+
+    def _task_for_backtest(self, jq_task_id: str | None) -> dict[str, Any] | None:
+        clean_task_id = (jq_task_id or "").strip()
+        if not clean_task_id:
+            return None
+        try:
+            from src.joinquant_orchestration.service import JoinQuantTaskError, JoinQuantTaskService
+
+            return JoinQuantTaskService(store=self.store).get_task(clean_task_id)
+        except JoinQuantTaskError as exc:
+            raise JoinQuantExportError(f"未找到聚宽任务: {clean_task_id}") from exc
+
+    @staticmethod
+    def _metric(result: dict[str, Any], *names: str) -> float | None:
+        for name in names:
+            if name in result and result[name] not in (None, ""):
+                parsed = _float_or_none(result[name], field_name=name)
+                if parsed is None:
+                    return None
+                if abs(parsed) > 1 and (
+                    any(keyword in name.lower() for keyword in ("return", "rate", "drawdown"))
+                    or any(keyword in name for keyword in ("收益", "回撤", "胜率", "换手率"))
+                ):
+                    return parsed / 100
+                return parsed
+        return None
+
+    @staticmethod
+    def _int_metric(result: dict[str, Any], *names: str) -> int | None:
+        for name in names:
+            if name in result and result[name] not in (None, ""):
+                parsed = _float_or_none(result[name], field_name=name)
+                return None if parsed is None else int(parsed)
+        return None
+
+    @staticmethod
+    def _backtest_run_id(*, jq_task_id: str | None, strategy_id: str, start_date: date, end_date: date) -> str:
+        raw = f"{jq_task_id or ''}|{strategy_id}|{start_date.isoformat()}|{end_date.isoformat()}"
+        return f"jqbt_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:18]}"
+
+    @staticmethod
+    def _public_backtest_result(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "run_id": row["run_id"],
+            "strategy_id": row["strategy_id"],
+            "start_date": row["start_date"].isoformat(),
+            "end_date": row["end_date"].isoformat(),
+            "benchmark": row["benchmark"],
+            "total_return": row["total_return"],
+            "annual_return": row["annual_return"],
+            "max_drawdown": row["max_drawdown"],
+            "sharpe": row["sharpe"],
+            "sortino": row["sortino"],
+            "calmar": row["calmar"],
+            "win_rate": row["win_rate"],
+            "profit_loss_ratio": row["profit_loss_ratio"],
+            "turnover": row["turnover"],
+            "trade_count": row["trade_count"],
+            "avg_holding_days": row["avg_holding_days"],
+            "excess_return": row["excess_return"],
+            "information_ratio": row["information_ratio"],
+            "status": row["status"],
+            "artifacts_path": row["artifacts_path"],
+        }
 
     def _fill_missing_planned_weights(self, normalized: list[dict[str, Any]]) -> None:
         missing = [row for row in normalized if row["planned_weight"] is None]

@@ -79,7 +79,10 @@ class AShareDataStore:
     def connect(self, *, read_only: bool = False) -> Iterator[duckdb.DuckDBPyConnection]:
         """Open a DuckDB connection and close it after use."""
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        with duckdb.connect(str(self.database_path), read_only=read_only) as conn:
+        # DuckDB rejects mixing read_only=True and read_only=False connections to
+        # the same file inside one process. The local API serves concurrent
+        # read and initialization requests, so keep one connection mode.
+        with duckdb.connect(str(self.database_path), read_only=False) as conn:
             yield conn
 
     def initialize(self) -> InitResult:
