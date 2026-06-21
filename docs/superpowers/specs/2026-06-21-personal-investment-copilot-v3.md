@@ -6,6 +6,7 @@ Related docs:
 
 - `docs/superpowers/specs/2026-06-20-two-module-event-research-design.md`
 - `docs/superpowers/specs/2026-06-21-codex-command-presentation-layer-design.md`
+- `docs/superpowers/specs/2026-06-21-personal-investment-assistant-v4-design.md`
 - `docs/pr-plans/2026-06-21-personal-investment-copilot-v3-pr-plan.md`
 - `docs/pr-plans/2026-06-21-advisor-action-display-pr-plan.md`
 
@@ -351,17 +352,14 @@ Existing tables should be reused wherever possible:
 
 The Web UI should become a decision cockpit, not a parameter console.
 
-Main pages:
+Main pages after the V4 advisor redesign:
 
-- Daily Copilot: one-screen daily report.
-- Market Memory: historical event, sector, stock, and strategy memory.
-- Portfolio Copilot: holdings, thesis health, exposure, and risk.
-- Watchlists: short-term and medium-term observation pools.
-- Alerts: risk and opportunity reminders.
-- Trade Plans: candidate plans and JoinQuant packages.
-- Decision Journal: decisions, reviews, and lessons.
-- Strategy Lifecycle: keep current idea-to-simulation flow.
-- JoinQuant Task Center: keep current orchestration center.
+- Today Advice: daily assistant conclusion, current action focus, risk reminders, and monitoring status.
+- Holdings: current positions, thesis health, sell or review lines, exposure, and next review schedule.
+- Watchlist: waiting-for-entry candidates, ongoing observation, and do-not-buy items.
+- Journal: decision timeline, strategy effectiveness, repeated mistakes, review queue, and lessons.
+
+Supporting capabilities such as market memory, external validation results, strategy lifecycle, and data source inspection remain available to Codex and backend services, but they should not dominate the primary assistant UI.
 
 Design principles:
 
@@ -370,6 +368,7 @@ Design principles:
 - Do not put large JSON, code, or parameter blocks in the primary view.
 - Use Codex instructions for complex operations.
 - Every recommendation must show evidence, risk, and status.
+- Do not put JoinQuant, broker, order, or backtest task entry points in the primary assistant pages.
 
 ## 10. Codex-Orchestrated Operations
 
@@ -382,8 +381,7 @@ Codex should be able to:
 - Add stocks to a watchlist.
 - Generate alerts and explain them.
 - Draft trade plans.
-- Send selected plans to JoinQuant for backtest or simulation.
-- Import JoinQuant results.
+- Write external validation results back into the system when the user or Codex has completed verification outside the page.
 - Write decision journal and review entries.
 
 The system should expose structured local APIs for each operation.

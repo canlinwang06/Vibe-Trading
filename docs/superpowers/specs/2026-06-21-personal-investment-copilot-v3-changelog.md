@@ -1,5 +1,23 @@
 # Personal Investment Copilot V3 Changelog
 
+## 3.2.0 - 2026-06-21
+
+Change type: changed
+
+Summary:
+
+- Added the V4 personal investment assistant design document.
+- Refocused the UI around four display pages: Today Advice, Holdings, Watchlist, and Journal.
+- Removed primary-page JoinQuant/backtest task entry points from the assistant design.
+- Reframed backtest and simulation evidence as external validation results that Codex can write back into the local system.
+- Updated the advisor PR plan to implement 4 display pages instead of a single action page.
+
+Impact:
+
+- Documentation and design planning only.
+- No runtime behavior change.
+- Future implementation work should reference `docs/superpowers/specs/2026-06-21-personal-investment-assistant-v4-design.md`.
+
 ## 3.1.0 - 2026-06-21
 
 Change type: added
