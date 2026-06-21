@@ -1,7 +1,7 @@
 # 投资助手行动建议页 PR 执行计划
 
 日期：2026-06-21
-状态：待逐个 PR 实现
+状态：PR-A0 至 PR-A13 已实现，并已通过本地发布验收
 关联设计：
 
 - Figma：<https://www.figma.com/design/GbkIPNO3aPz5P79Uzr0L1y>
@@ -59,6 +59,36 @@
 - PR-A13：做完整发布验收。
 
 前 10 个 PR 做完后，系统就能形成核心可用版本：用户可以告诉 Codex 自己买了什么，系统能在页面上展示下一步行动建议。
+
+## 4.1 当前完成状态
+
+截至 2026-06-21，本计划已完成 PR-A0 至 PR-A13 的首轮实现和本地验收。
+
+已落地能力：
+
+- Codex 可通过本地接口或 MCP 工具记录买入、卖出、投资逻辑、观察清单和外部验证结果。
+- 系统可生成今日建议、我的持仓、观察清单和复盘记录四个只读展示页。
+- 持仓页可展示继续持有、到期复盘、减仓或触发退出等结果。
+- 观察清单页可展示可小仓试探、等待买点、已错过、持仓重叠、验证未通过等状态。
+- 复盘记录页可展示系统建议和外部验证写回结果。
+- 提醒和决策日志已进入本地数据模型，可由 Codex 写入或由规则生成。
+- 页面没有聚宽登录、页面发起回测、券商接入或实盘下单入口。
+
+Codex 指令示例：
+
+- “我今天买入了中际旭创 300 股，价格 10.2，理由是 AI 算力景气度提升。”
+- “给浪潮信息补充投资逻辑：短期热点趋势，触发价 42，跌破 20 日线退出。”
+- “把工业富联加入 AI 算力观察清单，触发价 42，高开超过 6% 不买。”
+- “把聚宽模拟回测结果写回系统：年化收益 18%，最大回撤 8%，夏普 1.28，通过初筛。”
+- “我接受这条建议，但先观察不买入，把原因写入复盘记录。”
+
+已执行验收：
+
+- `./scripts/smoke`：通过。覆盖 Codex OAuth 配置边界、后端编译、前端构建、MCP 工具列表和 `http://127.0.0.1:8899` Web UI 响应。
+- `.venv/bin/python -m pytest agent/tests/test_ashare_data_store.py agent/tests/test_advisor_service.py agent/tests/test_advisor_mcp_tools.py`：36 passed。
+- `.venv/bin/python -m pytest agent/tests/test_mcp_server_smoke.py -m integration`：1 passed。
+- `npm test -- --run`：39 个前端测试文件、290 个用例通过。
+- `./scripts/acceptance-advisor-action-display`：通过。真实启动后端和前端，浏览器访问 `/advisor/today`、`/advisor/holdings`、`/advisor/watchlist`、`/advisor/journal`，并验证页面没有回测或实盘下单入口。
 
 ## PR-A0：行动建议产品基线
 
