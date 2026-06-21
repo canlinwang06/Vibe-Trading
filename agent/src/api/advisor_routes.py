@@ -65,6 +65,28 @@ class AdvisorThesisRequest(BaseModel):
     created_by: str = Field(default="codex", min_length=1, max_length=80)
 
 
+class AdvisorWatchlistRequest(BaseModel):
+    portfolio_id: str = Field(default=DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80)
+    ticker: str = Field(..., min_length=9, max_length=9)
+    ticker_name: str | None = Field(default=None, min_length=1, max_length=80)
+    theme: str | None = Field(default=None, max_length=80)
+    sector_id: str | None = Field(default=None, max_length=80)
+    sector_name: str | None = Field(default=None, max_length=80)
+    strategy_type: str | None = Field(default=None, max_length=80)
+    strategy_cycle: str | None = Field(default=None, max_length=80)
+    watch_status: str = Field(default="watching", min_length=1, max_length=80)
+    target_buy_price: float | None = Field(default=None, gt=0)
+    trigger_price: float | None = Field(default=None, gt=0)
+    stop_loss_price: float | None = Field(default=None, gt=0)
+    max_position_pct: float | None = Field(default=None, ge=0, le=1)
+    not_buy_conditions: str | None = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=2000)
+    evidence: dict[str, Any] | None = None
+    thesis_id: str | None = Field(default=None, max_length=120)
+    next_review_date: str | None = Field(default=None, min_length=10, max_length=10)
+    created_by: str = Field(default="codex", min_length=1, max_length=80)
+
+
 def _service() -> AdvisorService:
     return AdvisorService()
 
@@ -248,6 +270,52 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
             return _service().diagnose_holdings(
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
+                stale_after_days=stale_after_days,
+                persist=persist,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/advisor/watchlist", dependencies=[Depends(auth)])
+    def upsert_watchlist_item(payload: AdvisorWatchlistRequest) -> dict[str, Any]:
+        try:
+            return _service().upsert_watchlist_item(
+                portfolio_id=payload.portfolio_id,
+                ticker=payload.ticker,
+                ticker_name=payload.ticker_name,
+                theme=payload.theme,
+                sector_id=payload.sector_id,
+                sector_name=payload.sector_name,
+                strategy_type=payload.strategy_type,
+                strategy_cycle=payload.strategy_cycle,
+                watch_status=payload.watch_status,
+                target_buy_price=payload.target_buy_price,
+                trigger_price=payload.trigger_price,
+                stop_loss_price=payload.stop_loss_price,
+                max_position_pct=payload.max_position_pct,
+                not_buy_conditions=payload.not_buy_conditions,
+                reason=payload.reason,
+                evidence=payload.evidence,
+                thesis_id=payload.thesis_id,
+                next_review_date=payload.next_review_date,
+                created_by=payload.created_by,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/watchlist-candidates", dependencies=[Depends(auth)])
+    def build_watchlist_candidates(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        as_of_date: str | None = Query(None, min_length=10, max_length=10),
+        limit: int = Query(50, ge=1, le=200),
+        stale_after_days: int = Query(5, ge=1, le=30),
+        persist: bool = Query(True),
+    ) -> dict[str, Any]:
+        try:
+            return _service().build_watchlist_candidates(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                limit=limit,
                 stale_after_days=stale_after_days,
                 persist=persist,
             )

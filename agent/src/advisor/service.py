@@ -733,6 +733,141 @@ class AdvisorService:
             "live_trading": False,
         }
 
+    def upsert_watchlist_item(
+        self,
+        *,
+        ticker: str,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        ticker_name: str | None = None,
+        theme: str | None = None,
+        sector_id: str | None = None,
+        sector_name: str | None = None,
+        strategy_type: str | None = None,
+        strategy_cycle: str | None = None,
+        watch_status: str = "watching",
+        target_buy_price: float | None = None,
+        trigger_price: float | None = None,
+        stop_loss_price: float | None = None,
+        max_position_pct: float | None = None,
+        not_buy_conditions: str | None = None,
+        reason: str | None = None,
+        evidence: dict[str, Any] | None = None,
+        thesis_id: str | None = None,
+        next_review_date: str | date | datetime | None = None,
+        created_by: str = "codex",
+    ) -> dict[str, Any]:
+        """Create or update a research-only watchlist candidate."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        normalized_ticker = _normalize_ticker(ticker)
+        normalized_strategy_type = _normalize_strategy_type(strategy_type)
+        clean_target = _optional_float(target_buy_price, label="目标买入价")
+        clean_trigger = _optional_float(trigger_price, label="买入触发价")
+        clean_stop = _optional_float(stop_loss_price, label="卖出线")
+        clean_max_pct = _optional_float(max_position_pct, label="最大仓位")
+        review_date = _parse_optional_date(next_review_date)
+        now = _utc_now()
+        with self.store.connect() as conn:
+            self._ensure_portfolio(conn, clean_portfolio_id)
+            resolved_name = ticker_name or self._asset_name(conn, normalized_ticker) or normalized_ticker
+            existing = conn.execute(
+                """
+                SELECT item_id, created_at
+                FROM watchlist_items
+                WHERE portfolio_id = ? AND ticker = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                [clean_portfolio_id, normalized_ticker],
+            ).fetchone()
+            item_id = str(existing[0]) if existing else _new_id("watch", f"{clean_portfolio_id}:{normalized_ticker}")
+            created_at = existing[1] if existing else now
+            clean_thesis_id = thesis_id or self._latest_thesis_id(conn, clean_portfolio_id, normalized_ticker)
+            conn.execute("DELETE FROM watchlist_items WHERE item_id = ?", [item_id])
+            conn.execute(
+                """
+                INSERT INTO watchlist_items (
+                  item_id, portfolio_id, ticker, ticker_name, sector_id, sector_name,
+                  theme, thesis_id, strategy_type, strategy_cycle, watch_status,
+                  target_buy_price, trigger_price, stop_loss_price, max_position_pct,
+                  not_buy_conditions, reason, evidence_json, next_review_date,
+                  created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    item_id,
+                    clean_portfolio_id,
+                    normalized_ticker,
+                    resolved_name,
+                    sector_id,
+                    sector_name,
+                    theme,
+                    clean_thesis_id,
+                    normalized_strategy_type,
+                    strategy_cycle,
+                    watch_status,
+                    clean_target,
+                    clean_trigger,
+                    clean_stop,
+                    clean_max_pct,
+                    not_buy_conditions,
+                    reason,
+                    _json_dumps(evidence or {}),
+                    review_date,
+                    created_by,
+                    created_at,
+                    now,
+                ],
+            )
+            return self._fetch_watchlist_item(conn, item_id)
+
+    def build_watchlist_candidates(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+        limit: int = 50,
+        stale_after_days: int = 5,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        """Build advisor-facing candidate states from watchlist and candidate pool."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        as_of = _parse_date(as_of_date)
+        capped_limit = min(max(int(limit), 1), 200)
+        with self.store.connect() as conn:
+            rows = self._load_watchlist_sources(conn, clean_portfolio_id, as_of, capped_limit)
+            candidates: list[dict[str, Any]] = []
+            for row in rows:
+                thesis = self._thesis_for_watchlist_source(conn, clean_portfolio_id, row)
+                price = self._resolve_price_row(
+                    conn,
+                    ticker=row["ticker"],
+                    as_of=as_of,
+                    stale_after_days=max(int(stale_after_days), 1),
+                )
+                candidate = self._evaluate_watchlist_candidate(
+                    source=row,
+                    thesis=thesis,
+                    price=price,
+                    as_of=as_of,
+                )
+                if persist:
+                    self._record_watchlist_recommendation(conn, clean_portfolio_id, candidate, as_of)
+                candidates.append(candidate)
+        status_counts = dict(sorted(Counter(row["suggested_status"] for row in candidates).items()))
+        return {
+            "status": "ok",
+            "portfolio_id": clean_portfolio_id,
+            "as_of_date": as_of.isoformat(),
+            "candidates": candidates,
+            "candidate_count": len(candidates),
+            "status_counts": status_counts,
+            "research_only": True,
+            "live_trading": False,
+        }
+
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
             """
@@ -959,6 +1094,289 @@ class AdvisorService:
                 ),
                 _parse_optional_date(diagnostic.get("price", {}).get("data_date")),
                 diagnostic.get("price", {}).get("freshness_status"),
+                _utc_now(),
+            ],
+        )
+
+    def _fetch_watchlist_item(self, conn: Any, item_id: str) -> dict[str, Any]:
+        row = conn.execute(
+            """
+            SELECT item_id, portfolio_id, ticker, ticker_name, sector_id, sector_name,
+                   theme, thesis_id, strategy_type, strategy_cycle, watch_status,
+                   target_buy_price, trigger_price, stop_loss_price, max_position_pct,
+                   not_buy_conditions, reason, evidence_json, next_review_date,
+                   created_by, created_at, updated_at
+            FROM watchlist_items
+            WHERE item_id = ?
+            """,
+            [item_id],
+        ).fetchone()
+        if row is None:
+            raise AdvisorError("观察清单记录不存在")
+        return {
+            "item_id": row[0],
+            "portfolio_id": row[1],
+            "ticker": row[2],
+            "ticker_name": row[3],
+            "sector_id": row[4],
+            "sector_name": row[5],
+            "theme": row[6],
+            "thesis_id": row[7],
+            "strategy_type": row[8],
+            "strategy_type_label": STRATEGY_TYPE_LABELS.get(row[8], row[8]),
+            "strategy_cycle": row[9],
+            "watch_status": row[10],
+            "target_buy_price": row[11],
+            "trigger_price": row[12],
+            "stop_loss_price": row[13],
+            "max_position_pct": row[14],
+            "not_buy_conditions": row[15],
+            "reason": row[16],
+            "evidence": _json_loads(row[17]),
+            "next_review_date": _date_or_none(row[18]),
+            "created_by": row[19],
+            "created_at": _dt_or_none(row[20]),
+            "updated_at": _dt_or_none(row[21]),
+        }
+
+    def _load_watchlist_sources(
+        self,
+        conn: Any,
+        portfolio_id: str,
+        as_of: date,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT item_id, ticker, ticker_name, sector_id, sector_name, theme,
+                   thesis_id, strategy_type, strategy_cycle, watch_status,
+                   target_buy_price, trigger_price, stop_loss_price, max_position_pct,
+                   not_buy_conditions, reason, evidence_json, next_review_date
+            FROM watchlist_items
+            WHERE portfolio_id = ?
+            ORDER BY updated_at DESC, ticker
+            LIMIT ?
+            """,
+            [portfolio_id, limit],
+        ).fetchall()
+        sources = [
+            {
+                "source": "watchlist",
+                "item_id": row[0],
+                "ticker": row[1],
+                "ticker_name": row[2],
+                "sector_id": row[3],
+                "sector_name": row[4],
+                "theme": row[5],
+                "thesis_id": row[6],
+                "strategy_type": row[7],
+                "strategy_cycle": row[8],
+                "watch_status": row[9],
+                "target_buy_price": row[10],
+                "trigger_price": row[11],
+                "stop_loss_price": row[12],
+                "max_position_pct": row[13],
+                "not_buy_conditions": row[14],
+                "reason": row[15],
+                "evidence": _json_loads(row[16]),
+                "next_review_date": _date_or_none(row[17]),
+            }
+            for row in rows
+        ]
+        seen = {row["ticker"] for row in sources}
+        if len(sources) >= limit:
+            return sources
+        latest_candidate_date = conn.execute(
+            "SELECT MAX(as_of_date) FROM candidate_pool WHERE as_of_date <= ?",
+            [as_of],
+        ).fetchone()
+        if latest_candidate_date is None or latest_candidate_date[0] is None:
+            return sources
+        pool_rows = conn.execute(
+            """
+            SELECT ticker, ticker_name, sector_id, sector_name, theme, stock_score,
+                   risk_flag, reason, source
+            FROM candidate_pool
+            WHERE as_of_date = ? AND included = true
+            ORDER BY stock_score DESC, ticker
+            LIMIT ?
+            """,
+            [latest_candidate_date[0], limit],
+        ).fetchall()
+        for row in pool_rows:
+            if row[0] in seen:
+                continue
+            sources.append(
+                {
+                    "source": row[8] or "candidate_pool",
+                    "item_id": None,
+                    "ticker": row[0],
+                    "ticker_name": row[1],
+                    "sector_id": row[2],
+                    "sector_name": row[3],
+                    "theme": row[4],
+                    "thesis_id": None,
+                    "strategy_type": None,
+                    "strategy_cycle": None,
+                    "watch_status": "from_candidate_pool",
+                    "target_buy_price": None,
+                    "trigger_price": None,
+                    "stop_loss_price": None,
+                    "max_position_pct": None,
+                    "not_buy_conditions": None,
+                    "reason": row[7],
+                    "evidence": {
+                        "candidate_pool_date": _date_or_none(latest_candidate_date[0]),
+                        "stock_score": row[5],
+                        "risk_flag": row[6],
+                    },
+                    "next_review_date": None,
+                }
+            )
+            seen.add(row[0])
+            if len(sources) >= limit:
+                break
+        return sources
+
+    def _thesis_for_watchlist_source(
+        self,
+        conn: Any,
+        portfolio_id: str,
+        source: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        thesis_id = source.get("thesis_id") or self._latest_thesis_id(
+            conn,
+            portfolio_id,
+            str(source["ticker"]),
+        )
+        if not thesis_id:
+            return None
+        try:
+            return self._fetch_thesis(conn, str(thesis_id))
+        except AdvisorError:
+            return None
+
+    def _evaluate_watchlist_candidate(
+        self,
+        *,
+        source: dict[str, Any],
+        thesis: dict[str, Any] | None,
+        price: dict[str, Any],
+        as_of: date,
+    ) -> dict[str, Any]:
+        trigger_price = source.get("trigger_price") or source.get("target_buy_price")
+        buy_condition = (
+            thesis.get("entry_conditions") if thesis else None
+        ) or source.get("reason") or "未设置明确买入触发条件"
+        not_buy_conditions = (
+            source.get("not_buy_conditions")
+            or (thesis.get("not_buy_conditions") if thesis else None)
+            or "未设置不买条件，需补充风险边界"
+        )
+        max_position_pct = source.get("max_position_pct") or (thesis.get("max_position_pct") if thesis else None)
+        target_holding_days = thesis.get("target_holding_days") if thesis else None
+        has_exit = bool(thesis and thesis.get("has_exit_condition"))
+        complete = bool(thesis and thesis.get("completeness_status") == "complete")
+        close = price.get("close")
+        if not complete or not has_exit:
+            status = "needs_exit_condition"
+            status_label = "补充退出条件"
+            reason = f"{source['ticker_name']} 还没有完整退出条件，不能进入可小仓试探。"
+        elif price.get("freshness_status") in {"missing", "stale"}:
+            status = "observe"
+            status_label = "先观察"
+            reason = f"{source['ticker_name']} 行情数据不新，暂不触发买入判断。"
+        elif trigger_price is None:
+            status = "observe"
+            status_label = "先观察"
+            reason = f"{source['ticker_name']} 尚未设置买入触发价，只保留观察。"
+        elif close is not None and float(close) >= float(trigger_price) * 1.08:
+            status = "missed"
+            status_label = "已错过"
+            reason = f"{source['ticker_name']} 当前价明显高于触发价，追高风险增加。"
+        elif close is not None and float(close) >= float(trigger_price):
+            status = "ready_small_probe"
+            status_label = "可小仓试探"
+            reason = f"{source['ticker_name']} 价格达到触发线且退出条件完整，只能作为研究候选。"
+        else:
+            status = "waiting_trigger"
+            status_label = "等待买点"
+            reason = f"{source['ticker_name']} 尚未达到触发价，继续等待条件确认。"
+        return {
+            "ticker": source["ticker"],
+            "ticker_name": source["ticker_name"],
+            "source": source["source"],
+            "theme": source.get("theme"),
+            "sector_id": source.get("sector_id"),
+            "sector_name": source.get("sector_name"),
+            "suggested_status": status,
+            "suggested_status_label": status_label,
+            "buy_trigger_price": trigger_price,
+            "buy_trigger_condition": buy_condition,
+            "not_buy_conditions": not_buy_conditions,
+            "max_position_pct": max_position_pct,
+            "target_holding_days": target_holding_days,
+            "reason": reason,
+            "price": price,
+            "evidence": {
+                "source_evidence": source.get("evidence") or {},
+                "thesis_id": thesis.get("thesis_id") if thesis else None,
+                "has_exit_condition": has_exit,
+                "as_of_date": as_of.isoformat(),
+            },
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def _record_watchlist_recommendation(
+        self,
+        conn: Any,
+        portfolio_id: str,
+        candidate: dict[str, Any],
+        as_of: date,
+    ) -> None:
+        recommendation_id = _new_id(
+            "rec",
+            f"{portfolio_id}:{candidate['ticker']}:{as_of.isoformat()}:watchlist_candidate",
+        )
+        conn.execute(
+            "DELETE FROM advisor_action_recommendations WHERE recommendation_id = ?",
+            [recommendation_id],
+        )
+        priority = {
+            "ready_small_probe": 1,
+            "waiting_trigger": 2,
+            "observe": 3,
+            "needs_exit_condition": 3,
+            "missed": 4,
+        }.get(candidate["suggested_status"], 5)
+        conn.execute(
+            """
+            INSERT INTO advisor_action_recommendations (
+              recommendation_id, portfolio_id, as_of_date, action_type, action_label,
+              ticker, ticker_name, priority, confidence, target_price, stop_loss_price,
+              take_profit_price, max_position_pct, expected_holding_days, reason,
+              evidence_json, data_as_of, data_freshness, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 'active', ?)
+            """,
+            [
+                recommendation_id,
+                portfolio_id,
+                as_of,
+                candidate["suggested_status"],
+                candidate["suggested_status_label"],
+                candidate["ticker"],
+                candidate["ticker_name"],
+                priority,
+                0.68,
+                candidate.get("buy_trigger_price"),
+                candidate.get("max_position_pct"),
+                candidate.get("target_holding_days"),
+                candidate["reason"],
+                _json_dumps(candidate.get("evidence") or {}),
+                _parse_optional_date(candidate.get("price", {}).get("data_date")),
+                candidate.get("price", {}).get("freshness_status"),
                 _utc_now(),
             ],
         )

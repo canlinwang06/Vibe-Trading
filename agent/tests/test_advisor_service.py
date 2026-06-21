@@ -425,6 +425,130 @@ def test_advisor_holding_diagnosis_is_cautious_with_stale_price(
     assert "行情数据不新" in diagnostic["reason"]
 
 
+def _seed_watchlist_candidate(
+    service: AdvisorService,
+    store: AShareDataStore,
+    *,
+    ticker: str = "000977.SZ",
+    ticker_name: str = "浪潮信息",
+    close: float = 40.0,
+    trigger_price: float = 42.0,
+    include_exit: bool = True,
+) -> None:
+    _seed_market_price(
+        store,
+        ticker=ticker,
+        ticker_name=ticker_name,
+        trade_date=date(2026, 6, 22),
+        close=close,
+    )
+    service.upsert_thesis(
+        ticker=ticker,
+        ticker_name=ticker_name,
+        strategy_type="短期热点趋势",
+        strategy_cycle="short",
+        thesis="AI 算力服务器链条热点扩散。",
+        buy_reason="板块热度上升，个股等待放量确认。",
+        entry_conditions="放量突破触发价且板块热度不退潮。",
+        exit_conditions="跌破 20 日线或板块热度退潮。" if include_exit else None,
+        not_buy_conditions="高开超过 6% 或量能不足不买。",
+        stop_loss_price=trigger_price * 0.92 if include_exit else None,
+        max_position_pct=0.10,
+        target_holding_days=8,
+        review_frequency_days=3,
+        as_of_date="2026-06-21",
+    )
+    service.upsert_watchlist_item(
+        ticker=ticker,
+        ticker_name=ticker_name,
+        theme="AI算力",
+        trigger_price=trigger_price,
+        max_position_pct=0.10,
+        not_buy_conditions="高开超过 6% 或量能不足不买。",
+        reason="等待服务器链条确认买点。",
+    )
+
+
+def test_advisor_watchlist_candidate_waits_for_trigger(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=40.0, trigger_price=42.0)
+
+    result = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = result["candidates"][0]
+
+    assert candidate["suggested_status"] == "waiting_trigger"
+    assert candidate["buy_trigger_price"] == 42.0
+    assert "放量突破" in candidate["buy_trigger_condition"]
+    assert "高开超过" in candidate["not_buy_conditions"]
+    assert candidate["target_holding_days"] == 8
+
+
+def test_advisor_watchlist_candidate_can_be_small_probe_only_with_exit_condition(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0)
+
+    result = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = result["candidates"][0]
+
+    assert candidate["suggested_status"] == "ready_small_probe"
+    assert candidate["suggested_status_label"] == "可小仓试探"
+    assert candidate["evidence"]["has_exit_condition"] is True
+
+
+def test_advisor_watchlist_candidate_without_exit_condition_cannot_be_small_probe(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_watchlist_candidate(service, store, close=42.2, trigger_price=42.0, include_exit=False)
+
+    result = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = result["candidates"][0]
+
+    assert candidate["suggested_status"] == "needs_exit_condition"
+    assert candidate["suggested_status_label"] == "补充退出条件"
+    assert "不能进入可小仓试探" in candidate["reason"]
+
+
+def test_advisor_watchlist_candidates_can_include_candidate_pool_sources(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    store.initialize()
+    with store.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO candidate_pool (
+              as_of_date, ticker, ticker_name, source, sector_id, sector_name,
+              theme, stock_score, risk_flag, included, reason, created_at
+            )
+            VALUES (
+              DATE '2026-06-22', '601138.SH', '工业富联', 'sector_radar',
+              'theme_ai_compute', 'AI算力', 'AI算力', 0.76, 'normal', true,
+              '板块热度上升带来的候选。', now()
+            )
+            """
+        )
+    _seed_market_price(
+        store,
+        ticker="601138.SH",
+        ticker_name="工业富联",
+        trade_date=date(2026, 6, 22),
+        close=26.0,
+    )
+
+    result = service.build_watchlist_candidates(as_of_date="2026-06-22")
+    candidate = result["candidates"][0]
+
+    assert candidate["ticker"] == "601138.SH"
+    assert candidate["source"] == "sector_radar"
+    assert candidate["theme"] == "AI算力"
+    assert candidate["suggested_status"] == "needs_exit_condition"
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -537,5 +661,56 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert diagnostics.json()["diagnostics"][0]["action"] == "hold"
     assert diagnostics.json()["research_only"] is True
     assert diagnostics.json()["live_trading"] is False
+
+    _seed_market_price(
+        AShareDataStore(),
+        ticker="000977.SZ",
+        ticker_name="浪潮信息",
+        trade_date=date(2026, 6, 19),
+        close=42.2,
+    )
+    thesis_for_watchlist = client.post(
+        "/api/advisor/theses",
+        json={
+            "portfolio_id": "cn_a_main",
+            "ticker": "000977.SZ",
+            "ticker_name": "浪潮信息",
+            "strategy_type": "短期热点趋势",
+            "strategy_cycle": "short",
+            "thesis": "AI 算力服务器链条热点扩散。",
+            "buy_reason": "板块热度上升，个股等待放量确认。",
+            "entry_conditions": "放量突破触发价且板块热度不退潮。",
+            "exit_conditions": "跌破 20 日线或板块热度退潮。",
+            "not_buy_conditions": "高开超过 6% 或量能不足不买。",
+            "max_position_pct": 0.1,
+            "target_holding_days": 8,
+            "review_frequency_days": 3,
+            "as_of_date": "2026-06-21",
+        },
+    )
+    assert thesis_for_watchlist.status_code == 200
+    watchlist = client.post(
+        "/api/advisor/watchlist",
+        json={
+            "portfolio_id": "cn_a_main",
+            "ticker": "000977.SZ",
+            "ticker_name": "浪潮信息",
+            "theme": "AI算力",
+            "trigger_price": 42.0,
+            "max_position_pct": 0.1,
+            "not_buy_conditions": "高开超过 6% 或量能不足不买。",
+            "reason": "等待服务器链条确认买点。",
+        },
+    )
+    assert watchlist.status_code == 200
+
+    candidates = client.get(
+        "/api/advisor/watchlist-candidates",
+        params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"},
+    )
+    assert candidates.status_code == 200
+    assert candidates.json()["candidate_count"] == 1
+    assert candidates.json()["candidates"][0]["suggested_status"] == "ready_small_probe"
+    assert candidates.json()["candidates"][0]["research_only"] is True
 
     assert client.post("/api/advisor/place-order", json={}).status_code == 404
