@@ -143,6 +143,34 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getAdvisorTodaySnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorTodaySnapshot>(`/api/advisor/today-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorHoldingsSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorHoldingsSnapshot>(`/api/advisor/holdings-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorWatchlistSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorWatchlistSnapshot>(`/api/advisor/watchlist-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorJournalSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AdvisorJournalSnapshot>(`/api/advisor/journal-snapshot${qs ? `?${qs}` : ""}`);
+  },
   getDailyIntelligence: (params: DailyIntelligenceQuery = {}) => {
     const q = new URLSearchParams();
     if (params.as_of_date) q.set("as_of_date", params.as_of_date);
@@ -2740,6 +2768,121 @@ export interface AlphaCompareResult {
   winner: string;
   ranking: AlphaCompareRow[];
   skipped: AlphaCompareSkip[];
+}
+
+export interface AdvisorSnapshotQuery {
+  portfolio_id?: string;
+  as_of_date?: string;
+  limit?: number;
+}
+
+export interface AdvisorSummaryCard {
+  label: string;
+  value: string | number | null;
+}
+
+export interface AdvisorActionItem {
+  type?: string;
+  ticker?: string;
+  ticker_name?: string;
+  action?: string;
+  label?: string;
+  reason?: string;
+  trigger?: string | number | null;
+  next_review_date?: string | null;
+}
+
+export interface AdvisorDiagnostic {
+  ticker: string;
+  ticker_name: string;
+  action: string;
+  action_label: string;
+  reason: string;
+  risk?: string;
+  current_price?: number | null;
+  next_review_date?: string | null;
+  sell_line?: Record<string, unknown> | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorCandidate {
+  ticker: string;
+  ticker_name: string;
+  suggested_status: string;
+  suggested_status_label: string;
+  reason: string;
+  buy_trigger_price?: number | null;
+  buy_trigger_condition?: string | null;
+  not_buy_conditions?: string | null;
+  max_position_pct?: number | null;
+  target_holding_days?: number | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorRiskItem {
+  ticker: string;
+  ticker_name: string;
+  rule_id: string;
+  rule_label: string;
+  severity: string;
+  reason: string;
+}
+
+export interface AdvisorTodaySnapshot {
+  snapshot_type: "today";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  summary_cards: AdvisorSummaryCard[];
+  primary_actions: AdvisorActionItem[];
+  holding_action_counts: Record<string, number>;
+  candidate_status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  data_freshness: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorHoldingsSnapshot {
+  snapshot_type: "holdings";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  portfolio_summary: Record<string, unknown>;
+  diagnostics: AdvisorDiagnostic[];
+  prices: Record<string, unknown>[];
+  action_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorWatchlistSnapshot {
+  snapshot_type: "watchlist";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  candidates: AdvisorCandidate[];
+  do_not_buy_items: AdvisorRiskItem[];
+  status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorJournalSnapshot {
+  snapshot_type: "journal";
+  title: string;
+  portfolio_id: string;
+  headline: string;
+  commands: Record<string, unknown>[];
+  recommendations: Record<string, unknown>[];
+  external_validations: Record<string, unknown>[];
+  record_count: number;
+  research_only: boolean;
+  live_trading: boolean;
 }
 
 // --- Connector runtime channel types ---

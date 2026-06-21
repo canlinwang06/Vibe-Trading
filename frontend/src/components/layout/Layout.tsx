@@ -35,6 +35,10 @@ export function Layout() {
 
   const iconByRoute = {
     "/": Gauge,
+    "/advisor/today": Gauge,
+    "/advisor/holdings": BriefcaseBusiness,
+    "/advisor/watchlist": Target,
+    "/advisor/journal": ClipboardList,
     "/event-records": ClipboardList,
     "/sector-stock-analysis": Layers,
     "/event-radar": Radar,

@@ -1,5 +1,9 @@
 export const ASHARE_NAV_ITEMS = [
   { to: "/", labelKey: "layout.dashboard" },
+  { to: "/advisor/today", labelKey: "layout.advisorToday" },
+  { to: "/advisor/holdings", labelKey: "layout.advisorHoldings" },
+  { to: "/advisor/watchlist", labelKey: "layout.advisorWatchlist" },
+  { to: "/advisor/journal", labelKey: "layout.advisorJournal" },
   { to: "/event-records", labelKey: "layout.eventRecords" },
   { to: "/sector-stock-analysis", labelKey: "layout.sectorStockAnalysis" },
   { to: "/strategy-lab", labelKey: "layout.strategyLab" },
@@ -15,6 +19,10 @@ export const ASHARE_NAV_ITEMS = [
 
 export const ASHARE_NAV_LABELS_ZH = [
   "A 股驾驶舱",
+  "今日建议",
+  "我的持仓",
+  "观察清单",
+  "复盘记录",
   "事件记录库",
   "板块及股票分析",
   "策略实验室",

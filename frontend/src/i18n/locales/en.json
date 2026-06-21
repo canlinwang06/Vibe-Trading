@@ -5,6 +5,10 @@
   "layout": {
     "productName": "A 股策略中台",
     "dashboard": "A 股驾驶舱",
+    "advisorToday": "今日建议",
+    "advisorHoldings": "我的持仓",
+    "advisorWatchlist": "观察清单",
+    "advisorJournal": "复盘记录",
     "eventRecords": "Event Records",
     "sectorStockAnalysis": "Sector & Stock Analysis",
     "eventRadar": "事件雷达",

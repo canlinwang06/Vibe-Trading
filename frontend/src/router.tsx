@@ -64,6 +64,18 @@ const DailyWorkflow = lazy(() =>
 const DataSources = lazy(() =>
   import("@/pages/DataSources").then((m) => ({ default: m.DataSources })),
 );
+const AdvisorToday = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorToday })),
+);
+const AdvisorHoldings = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorHoldings })),
+);
+const AdvisorWatchlist = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorWatchlist })),
+);
+const AdvisorJournal = lazy(() =>
+  import("@/pages/Advisor").then((m) => ({ default: m.AdvisorJournal })),
+);
 
 function PageLoader() {
   return (
@@ -86,6 +98,10 @@ export const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: "/", element: wrap(Home) },
+      { path: "/advisor/today", element: wrap(AdvisorToday) },
+      { path: "/advisor/holdings", element: wrap(AdvisorHoldings) },
+      { path: "/advisor/watchlist", element: wrap(AdvisorWatchlist) },
+      { path: "/advisor/journal", element: wrap(AdvisorJournal) },
       { path: "/event-records", element: wrap(EventRecords) },
       { path: "/sector-stock-analysis", element: wrap(SectorStockAnalysis) },
       { path: "/event-radar", element: wrap(EventRadar) },
