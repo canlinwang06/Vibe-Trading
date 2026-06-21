@@ -38,6 +38,33 @@ class AdvisorTransactionRequest(BaseModel):
     evidence: dict[str, Any] | None = None
 
 
+class AdvisorThesisRequest(BaseModel):
+    portfolio_id: str = Field(default=DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80)
+    ticker: str = Field(..., min_length=9, max_length=9)
+    ticker_name: str | None = Field(default=None, min_length=1, max_length=80)
+    thesis_id: str | None = Field(default=None, max_length=120)
+    thesis_type: str = Field(default="manual_advisor", min_length=1, max_length=80)
+    strategy_type: str | None = Field(default=None, max_length=80)
+    strategy_cycle: str | None = Field(default=None, max_length=80)
+    thesis: str | None = Field(default=None, max_length=2000)
+    buy_reason: str | None = Field(default=None, max_length=2000)
+    entry_conditions: str | None = Field(default=None, max_length=2000)
+    exit_conditions: str | None = Field(default=None, max_length=2000)
+    not_buy_conditions: str | None = Field(default=None, max_length=2000)
+    expected_catalysts: str | None = Field(default=None, max_length=2000)
+    invalidation_conditions: str | None = Field(default=None, max_length=2000)
+    stop_loss_price: float | None = Field(default=None, gt=0)
+    take_profit_price: float | None = Field(default=None, gt=0)
+    max_position_pct: float | None = Field(default=None, ge=0, le=1)
+    target_holding_days: int | None = Field(default=None, ge=1, le=3650)
+    review_frequency_days: int | None = Field(default=None, ge=1, le=365)
+    as_of_date: str | None = Field(default=None, min_length=10, max_length=10)
+    evidence: dict[str, Any] | None = None
+    bind_to_position: bool = True
+    bind_to_watchlist: bool = True
+    created_by: str = Field(default="codex", min_length=1, max_length=80)
+
+
 def _service() -> AdvisorService:
     return AdvisorService()
 
@@ -122,3 +149,58 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
             "live_trading": False,
         }
 
+    @app.post("/api/advisor/theses", dependencies=[Depends(auth)])
+    def upsert_thesis(payload: AdvisorThesisRequest) -> dict[str, Any]:
+        try:
+            return _service().upsert_thesis(
+                portfolio_id=payload.portfolio_id,
+                ticker=payload.ticker,
+                ticker_name=payload.ticker_name,
+                thesis_id=payload.thesis_id,
+                thesis_type=payload.thesis_type,
+                strategy_type=payload.strategy_type,
+                strategy_cycle=payload.strategy_cycle,
+                thesis=payload.thesis,
+                buy_reason=payload.buy_reason,
+                entry_conditions=payload.entry_conditions,
+                exit_conditions=payload.exit_conditions,
+                not_buy_conditions=payload.not_buy_conditions,
+                expected_catalysts=payload.expected_catalysts,
+                invalidation_conditions=payload.invalidation_conditions,
+                stop_loss_price=payload.stop_loss_price,
+                take_profit_price=payload.take_profit_price,
+                max_position_pct=payload.max_position_pct,
+                target_holding_days=payload.target_holding_days,
+                review_frequency_days=payload.review_frequency_days,
+                as_of_date=payload.as_of_date,
+                evidence=payload.evidence,
+                bind_to_position=payload.bind_to_position,
+                bind_to_watchlist=payload.bind_to_watchlist,
+                created_by=payload.created_by,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/theses", dependencies=[Depends(auth)])
+    def list_theses(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        ticker: str | None = Query(None, min_length=9, max_length=9),
+        include_incomplete: bool = Query(True),
+        limit: int = Query(100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        try:
+            theses = _service().list_theses(
+                portfolio_id=portfolio_id,
+                ticker=ticker,
+                include_incomplete=include_incomplete,
+                limit=limit,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+        return {
+            "portfolio_id": portfolio_id,
+            "theses": theses,
+            "thesis_count": len(theses),
+            "research_only": True,
+            "live_trading": False,
+        }

@@ -713,6 +713,12 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
           take_profit_price DOUBLE,
           max_position_pct DOUBLE,
           target_holding_days INTEGER,
+          entry_conditions TEXT,
+          exit_conditions TEXT,
+          not_buy_conditions TEXT,
+          review_frequency_days INTEGER,
+          next_review_date DATE,
+          completeness_status VARCHAR,
           entry_rules_json TEXT,
           exit_rules_json TEXT,
           evidence_json TEXT,
@@ -734,6 +740,7 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
           sector_id VARCHAR,
           sector_name VARCHAR,
           theme VARCHAR,
+          thesis_id VARCHAR,
           strategy_type VARCHAR,
           strategy_cycle VARCHAR,
           watch_status VARCHAR,
@@ -843,3 +850,13 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
 )
 
 PR03_CORE_TABLE_NAMES = tuple(table.name for table in PR03_CORE_TABLES)
+
+PR03_CORE_ALTERATIONS: tuple[str, ...] = (
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS entry_conditions TEXT",
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS exit_conditions TEXT",
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS not_buy_conditions TEXT",
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS review_frequency_days INTEGER",
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS next_review_date DATE",
+    "ALTER TABLE investment_theses ADD COLUMN IF NOT EXISTS completeness_status VARCHAR",
+    "ALTER TABLE watchlist_items ADD COLUMN IF NOT EXISTS thesis_id VARCHAR",
+)

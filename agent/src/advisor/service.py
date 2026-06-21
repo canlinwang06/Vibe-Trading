@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from src.ashare_data.store import AShareDataStore
@@ -18,6 +18,30 @@ from src.market_policy import is_a_share_code, normalize_a_share_code
 
 
 DEFAULT_PORTFOLIO_ID = "cn_a_main"
+
+STRATEGY_TYPE_ALIASES = {
+    "long_quality_trend": "long_quality_trend",
+    "长期质量趋势": "long_quality_trend",
+    "quality_trend": "long_quality_trend",
+    "medium_industry_cycle": "medium_industry_cycle",
+    "中期景气趋势": "medium_industry_cycle",
+    "industry_cycle": "medium_industry_cycle",
+    "short_hotspot_momentum": "short_hotspot_momentum",
+    "短期热点趋势": "short_hotspot_momentum",
+    "hotspot_momentum": "short_hotspot_momentum",
+    "event_driven_watch": "event_driven_watch",
+    "事件驱动观察": "event_driven_watch",
+    "backtest_candidate": "backtest_candidate",
+    "回测候选策略": "backtest_candidate",
+}
+
+STRATEGY_TYPE_LABELS = {
+    "long_quality_trend": "长期质量趋势",
+    "medium_industry_cycle": "中期景气趋势",
+    "short_hotspot_momentum": "短期热点趋势",
+    "event_driven_watch": "事件驱动观察",
+    "backtest_candidate": "回测候选策略",
+}
 
 
 class AdvisorError(RuntimeError):
@@ -130,6 +154,58 @@ def _position_id(portfolio_id: str, ticker: str) -> str:
 
 def _command_id(idempotency_key: str | None) -> str:
     return _new_id("cmd", idempotency_key) if idempotency_key else _new_id("cmd")
+
+
+def _normalize_strategy_type(value: str | None) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    normalized = STRATEGY_TYPE_ALIASES.get(str(value).strip())
+    if normalized is None:
+        allowed = "、".join(STRATEGY_TYPE_LABELS.values())
+        raise AdvisorError(f"策略类型暂只支持: {allowed}")
+    return normalized
+
+
+def _next_review_date(as_of: date, review_frequency_days: int | None) -> date | None:
+    if review_frequency_days is None:
+        return None
+    return as_of + timedelta(days=max(int(review_frequency_days), 1))
+
+
+def _non_empty(value: Any) -> bool:
+    return value not in (None, "", {}, [])
+
+
+def _thesis_completeness(
+    *,
+    buy_reason: str | None,
+    entry_conditions: str | None,
+    exit_conditions: str | None,
+    not_buy_conditions: str | None,
+    max_position_pct: float | None,
+    target_holding_days: int | None,
+    review_frequency_days: int | None,
+    invalidation_conditions: str | None,
+    stop_loss_price: float | None,
+) -> tuple[str, list[str], bool]:
+    missing: list[str] = []
+    if not _non_empty(buy_reason):
+        missing.append("买入或观察原因")
+    if not _non_empty(entry_conditions):
+        missing.append("入场条件")
+    has_exit = _non_empty(exit_conditions) or _non_empty(invalidation_conditions) or stop_loss_price is not None
+    if not has_exit:
+        missing.append("退出条件")
+    if not _non_empty(not_buy_conditions):
+        missing.append("不买条件")
+    if max_position_pct is None:
+        missing.append("最大仓位")
+    if target_holding_days is None:
+        missing.append("预期持有周期")
+    if review_frequency_days is None:
+        missing.append("复盘频率")
+    status = "complete" if not missing else "incomplete"
+    return status, missing, has_exit
 
 
 class AdvisorService:
@@ -330,6 +406,357 @@ class AdvisorService:
         with self.store.connect() as conn:
             self._ensure_portfolio(conn, clean_portfolio_id)
             return self._portfolio_summary(conn, clean_portfolio_id)
+
+    def upsert_thesis(
+        self,
+        *,
+        ticker: str,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        ticker_name: str | None = None,
+        thesis_id: str | None = None,
+        thesis_type: str = "manual_advisor",
+        strategy_type: str | None = None,
+        strategy_cycle: str | None = None,
+        thesis: str | None = None,
+        buy_reason: str | None = None,
+        entry_conditions: str | None = None,
+        exit_conditions: str | None = None,
+        not_buy_conditions: str | None = None,
+        expected_catalysts: str | None = None,
+        invalidation_conditions: str | None = None,
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
+        max_position_pct: float | None = None,
+        target_holding_days: int | None = None,
+        review_frequency_days: int | None = None,
+        as_of_date: str | date | datetime | None = None,
+        evidence: dict[str, Any] | None = None,
+        bind_to_position: bool = True,
+        bind_to_watchlist: bool = True,
+        created_by: str = "codex",
+    ) -> dict[str, Any]:
+        """Create or update an investment thesis and bind it to local advisor records."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        normalized_ticker = _normalize_ticker(ticker)
+        normalized_strategy_type = _normalize_strategy_type(strategy_type)
+        clean_stop = _optional_float(stop_loss_price, label="卖出线")
+        clean_take = _optional_float(take_profit_price, label="止盈线")
+        clean_max_pct = _optional_float(max_position_pct, label="最大仓位")
+        clean_target_days = int(target_holding_days) if target_holding_days is not None else None
+        clean_review_days = int(review_frequency_days) if review_frequency_days is not None else None
+        if clean_target_days is not None and clean_target_days <= 0:
+            raise AdvisorError("预期持有周期必须大于 0")
+        if clean_review_days is not None and clean_review_days <= 0:
+            raise AdvisorError("复盘频率必须大于 0")
+        as_of = _parse_date(as_of_date)
+        next_review = _next_review_date(as_of, clean_review_days)
+        completeness_status, missing_fields, has_exit_condition = _thesis_completeness(
+            buy_reason=buy_reason,
+            entry_conditions=entry_conditions,
+            exit_conditions=exit_conditions,
+            not_buy_conditions=not_buy_conditions,
+            max_position_pct=clean_max_pct,
+            target_holding_days=clean_target_days,
+            review_frequency_days=clean_review_days,
+            invalidation_conditions=invalidation_conditions,
+            stop_loss_price=clean_stop,
+        )
+        now = _utc_now()
+        with self.store.connect() as conn:
+            self._ensure_portfolio(conn, clean_portfolio_id)
+            resolved_name = ticker_name or self._asset_name(conn, normalized_ticker) or normalized_ticker
+            clean_thesis_id = thesis_id or self._latest_thesis_id(conn, clean_portfolio_id, normalized_ticker)
+            if not clean_thesis_id:
+                clean_thesis_id = _new_id("thesis", f"{clean_portfolio_id}:{normalized_ticker}:advisor")
+            existing_created_at = self._thesis_created_at(conn, clean_thesis_id) or now
+            conn.execute("DELETE FROM investment_theses WHERE thesis_id = ?", [clean_thesis_id])
+            conn.execute(
+                """
+                INSERT INTO investment_theses (
+                  thesis_id, portfolio_id, ticker, ticker_name, thesis_type, strategy_type,
+                  strategy_cycle, thesis, buy_reason, expected_catalysts,
+                  invalidation_conditions, stop_loss_price, take_profit_price,
+                  max_position_pct, target_holding_days, entry_conditions,
+                  exit_conditions, not_buy_conditions, review_frequency_days,
+                  next_review_date, completeness_status, entry_rules_json,
+                  exit_rules_json, evidence_json, status, created_by, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                """,
+                [
+                    clean_thesis_id,
+                    clean_portfolio_id,
+                    normalized_ticker,
+                    resolved_name,
+                    thesis_type,
+                    normalized_strategy_type,
+                    strategy_cycle,
+                    thesis,
+                    buy_reason,
+                    expected_catalysts,
+                    invalidation_conditions,
+                    clean_stop,
+                    clean_take,
+                    clean_max_pct,
+                    clean_target_days,
+                    entry_conditions,
+                    exit_conditions,
+                    not_buy_conditions,
+                    clean_review_days,
+                    next_review,
+                    completeness_status,
+                    _json_dumps({"conditions": entry_conditions}),
+                    _json_dumps({"conditions": exit_conditions, "invalidation": invalidation_conditions}),
+                    _json_dumps(evidence or {}),
+                    created_by,
+                    existing_created_at,
+                    now,
+                ],
+            )
+            bound_position = None
+            if bind_to_position:
+                bound_position = self._bind_thesis_to_position(
+                    conn,
+                    portfolio_id=clean_portfolio_id,
+                    ticker=normalized_ticker,
+                    thesis_id=clean_thesis_id,
+                    strategy_type=normalized_strategy_type,
+                    strategy_cycle=strategy_cycle,
+                    stop_loss_price=clean_stop,
+                    take_profit_price=clean_take,
+                    next_review_date=next_review,
+                    updated_at=now,
+                )
+            watchlist_rows = 0
+            if bind_to_watchlist:
+                watchlist_rows = self._bind_thesis_to_watchlist(
+                    conn,
+                    portfolio_id=clean_portfolio_id,
+                    ticker=normalized_ticker,
+                    thesis_id=clean_thesis_id,
+                    strategy_type=normalized_strategy_type,
+                    strategy_cycle=strategy_cycle,
+                    next_review_date=next_review,
+                    updated_at=now,
+                )
+            result = self._fetch_thesis(conn, clean_thesis_id)
+        result.update(
+            {
+                "missing_fields": missing_fields,
+                "has_exit_condition": has_exit_condition,
+                "can_enter_ready_to_buy": completeness_status == "complete" and has_exit_condition,
+                "bound_position": bound_position,
+                "bound_watchlist_count": watchlist_rows,
+                "research_only": True,
+                "live_trading": False,
+            }
+        )
+        return result
+
+    def list_theses(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        ticker: str | None = None,
+        include_incomplete: bool = True,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List advisor investment theses for holdings and watchlist items."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        filters = ["portfolio_id = ?"]
+        params: list[Any] = [clean_portfolio_id]
+        if ticker:
+            filters.append("ticker = ?")
+            params.append(_normalize_ticker(ticker))
+        if not include_incomplete:
+            filters.append("completeness_status = 'complete'")
+        params.append(min(max(int(limit), 1), 500))
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                f"""
+                SELECT thesis_id
+                FROM investment_theses
+                WHERE {" AND ".join(filters)}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            return [self._fetch_thesis(conn, str(row[0])) for row in rows]
+
+    def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
+        row = conn.execute(
+            """
+            SELECT thesis_id
+            FROM investment_theses
+            WHERE portfolio_id = ? AND ticker = ? AND status = 'active'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            [portfolio_id, ticker],
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def _thesis_created_at(self, conn: Any, thesis_id: str) -> datetime | None:
+        row = conn.execute(
+            "SELECT created_at FROM investment_theses WHERE thesis_id = ?",
+            [thesis_id],
+        ).fetchone()
+        return row[0] if row else None
+
+    def _bind_thesis_to_position(
+        self,
+        conn: Any,
+        *,
+        portfolio_id: str,
+        ticker: str,
+        thesis_id: str,
+        strategy_type: str | None,
+        strategy_cycle: str | None,
+        stop_loss_price: float | None,
+        take_profit_price: float | None,
+        next_review_date: date | None,
+        updated_at: datetime,
+    ) -> dict[str, Any] | None:
+        row = conn.execute(
+            """
+            SELECT position_id
+            FROM positions
+            WHERE portfolio_id = ? AND ticker = ?
+            ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, updated_at DESC
+            LIMIT 1
+            """,
+            [portfolio_id, ticker],
+        ).fetchone()
+        if row is None:
+            return None
+        position_id = str(row[0])
+        conn.execute(
+            """
+            UPDATE positions
+            SET thesis_id = ?,
+                strategy_type = COALESCE(?, strategy_type),
+                strategy_cycle = COALESCE(?, strategy_cycle),
+                stop_loss_price = COALESCE(?, stop_loss_price),
+                take_profit_price = COALESCE(?, take_profit_price),
+                next_review_date = COALESCE(?, next_review_date),
+                updated_at = ?
+            WHERE position_id = ?
+            """,
+            [
+                thesis_id,
+                strategy_type,
+                strategy_cycle,
+                stop_loss_price,
+                take_profit_price,
+                next_review_date,
+                updated_at,
+                position_id,
+            ],
+        )
+        return self._fetch_position(conn, position_id)
+
+    def _bind_thesis_to_watchlist(
+        self,
+        conn: Any,
+        *,
+        portfolio_id: str,
+        ticker: str,
+        thesis_id: str,
+        strategy_type: str | None,
+        strategy_cycle: str | None,
+        next_review_date: date | None,
+        updated_at: datetime,
+    ) -> int:
+        rows = conn.execute(
+            """
+            SELECT item_id
+            FROM watchlist_items
+            WHERE portfolio_id = ? AND ticker = ?
+            """,
+            [portfolio_id, ticker],
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                """
+                UPDATE watchlist_items
+                SET thesis_id = ?,
+                    strategy_type = COALESCE(?, strategy_type),
+                    strategy_cycle = COALESCE(?, strategy_cycle),
+                    next_review_date = COALESCE(?, next_review_date),
+                    updated_at = ?
+                WHERE item_id = ?
+                """,
+                [thesis_id, strategy_type, strategy_cycle, next_review_date, updated_at, row[0]],
+            )
+        return len(rows)
+
+    def _fetch_thesis(self, conn: Any, thesis_id: str) -> dict[str, Any]:
+        row = conn.execute(
+            """
+            SELECT thesis_id, portfolio_id, ticker, ticker_name, thesis_type,
+                   strategy_type, strategy_cycle, thesis, buy_reason,
+                   expected_catalysts, invalidation_conditions, stop_loss_price,
+                   take_profit_price, max_position_pct, target_holding_days,
+                   entry_conditions, exit_conditions, not_buy_conditions,
+                   review_frequency_days, next_review_date, completeness_status,
+                   entry_rules_json, exit_rules_json, evidence_json, status,
+                   created_by, created_at, updated_at
+            FROM investment_theses
+            WHERE thesis_id = ?
+            """,
+            [thesis_id],
+        ).fetchone()
+        if row is None:
+            raise AdvisorError("投资逻辑记录不存在")
+        completeness_status, missing_fields, has_exit_condition = _thesis_completeness(
+            buy_reason=row[8],
+            entry_conditions=row[15],
+            exit_conditions=row[16],
+            not_buy_conditions=row[17],
+            max_position_pct=row[13],
+            target_holding_days=row[14],
+            review_frequency_days=row[18],
+            invalidation_conditions=row[10],
+            stop_loss_price=row[11],
+        )
+        stored_status = row[20] or completeness_status
+        return {
+            "thesis_id": row[0],
+            "portfolio_id": row[1],
+            "ticker": row[2],
+            "ticker_name": row[3],
+            "thesis_type": row[4],
+            "strategy_type": row[5],
+            "strategy_type_label": STRATEGY_TYPE_LABELS.get(row[5], row[5]),
+            "strategy_cycle": row[6],
+            "thesis": row[7],
+            "buy_reason": row[8],
+            "expected_catalysts": row[9],
+            "invalidation_conditions": row[10],
+            "stop_loss_price": row[11],
+            "take_profit_price": row[12],
+            "max_position_pct": row[13],
+            "target_holding_days": row[14],
+            "entry_conditions": row[15],
+            "exit_conditions": row[16],
+            "not_buy_conditions": row[17],
+            "review_frequency_days": row[18],
+            "next_review_date": _date_or_none(row[19]),
+            "completeness_status": stored_status,
+            "missing_fields": missing_fields,
+            "has_exit_condition": has_exit_condition,
+            "can_enter_ready_to_buy": stored_status == "complete" and has_exit_condition,
+            "entry_rules": _json_loads(row[21]),
+            "exit_rules": _json_loads(row[22]),
+            "evidence": _json_loads(row[23]),
+            "status": row[24],
+            "created_by": row[25],
+            "created_at": _dt_or_none(row[26]),
+            "updated_at": _dt_or_none(row[27]),
+        }
 
     def _normalize_action(self, action: str) -> str:
         value = str(action or "").strip().lower()
@@ -998,4 +1425,3 @@ class AdvisorService:
                 created_at,
             ],
         )
-

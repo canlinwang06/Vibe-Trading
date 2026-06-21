@@ -10,7 +10,12 @@ from typing import Iterator
 
 import duckdb
 
-from src.ashare_data.schema import PR03_CORE_TABLE_NAMES, PR03_CORE_TABLES, PR03_SCHEMA_VERSION
+from src.ashare_data.schema import (
+    PR03_CORE_ALTERATIONS,
+    PR03_CORE_TABLE_NAMES,
+    PR03_CORE_TABLES,
+    PR03_SCHEMA_VERSION,
+)
 from src.config.paths import get_data_dir
 
 ASHARE_DATA_ROOT_ENV = "ASHARE_DATA_ROOT"
@@ -97,6 +102,8 @@ class AShareDataStore:
         with self.connect(read_only=False) as conn:
             for table in PR03_CORE_TABLES:
                 conn.execute(table.sql)
+            for statement in PR03_CORE_ALTERATIONS:
+                conn.execute(statement)
 
         return InitResult(
             database_path=self.database_path,

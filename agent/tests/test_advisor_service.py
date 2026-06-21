@@ -145,6 +145,73 @@ def test_advisor_sell_updates_partial_and_closed_position(service: AdvisorServic
     assert transaction_count == 3
 
 
+def test_advisor_complete_thesis_links_to_existing_position(service: AdvisorService, store: AShareDataStore) -> None:
+    service.record_transaction(
+        ticker="300308.SZ",
+        ticker_name="中际旭创",
+        action="buy",
+        price=10.2,
+        quantity=300,
+        trade_date="2026-06-21",
+        idempotency_key="buy-300308-before-thesis",
+    )
+
+    thesis = service.upsert_thesis(
+        ticker="300308.SZ",
+        ticker_name="中际旭创",
+        strategy_type="短期热点趋势",
+        strategy_cycle="short",
+        thesis="AI 算力热点扩散，光模块龙头具备弹性。",
+        buy_reason="板块热度上升且个股处于观察区间。",
+        entry_conditions="放量站上 10 日线且板块热度维持高位。",
+        exit_conditions="跌破 20 日线或板块热度连续两日退潮。",
+        not_buy_conditions="高开超过 7% 或成交额明显缩量不买。",
+        stop_loss_price=9.5,
+        take_profit_price=12.8,
+        max_position_pct=0.12,
+        target_holding_days=10,
+        review_frequency_days=3,
+        as_of_date="2026-06-21",
+        evidence={"sources": ["unit-test"]},
+    )
+
+    assert thesis["completeness_status"] == "complete"
+    assert thesis["strategy_type"] == "short_hotspot_momentum"
+    assert thesis["strategy_type_label"] == "短期热点趋势"
+    assert thesis["can_enter_ready_to_buy"] is True
+    assert thesis["next_review_date"] == "2026-06-24"
+    assert thesis["bound_position"]["ticker"] == "300308.SZ"
+    assert thesis["bound_position"]["thesis_id"] == thesis["thesis_id"]
+    assert service.list_theses(include_incomplete=False)[0]["thesis_id"] == thesis["thesis_id"]
+    with store.connect(read_only=True) as conn:
+        row = conn.execute(
+            "SELECT thesis_id, next_review_date FROM positions WHERE ticker = '300308.SZ'"
+        ).fetchone()
+    assert row[0] == thesis["thesis_id"]
+    assert row[1].isoformat() == "2026-06-24"
+
+
+def test_advisor_thesis_without_exit_condition_is_incomplete(service: AdvisorService) -> None:
+    thesis = service.upsert_thesis(
+        ticker="000977.SZ",
+        ticker_name="浪潮信息",
+        strategy_type="中期景气趋势",
+        buy_reason="服务器产业链景气度仍在观察。",
+        entry_conditions="股价回踩均线后重新放量。",
+        not_buy_conditions="业绩预期下修或板块扩散失败。",
+        max_position_pct=0.10,
+        target_holding_days=30,
+        review_frequency_days=7,
+        as_of_date="2026-06-21",
+    )
+
+    assert thesis["completeness_status"] == "incomplete"
+    assert "退出条件" in thesis["missing_fields"]
+    assert thesis["has_exit_condition"] is False
+    assert thesis["can_enter_ready_to_buy"] is False
+    assert service.list_theses(include_incomplete=False) == []
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -204,5 +271,32 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert summary.json()["research_only"] is True
     assert summary.json()["live_trading"] is False
 
-    assert client.post("/api/advisor/place-order", json={}).status_code == 404
+    thesis = client.post(
+        "/api/advisor/theses",
+        json={
+            "portfolio_id": "cn_a_main",
+            "ticker": "300750.SZ",
+            "ticker_name": "宁德时代",
+            "strategy_type": "中期景气趋势",
+            "strategy_cycle": "medium",
+            "thesis": "新能源产业链景气度修复候选。",
+            "buy_reason": "基本面修复预期叠加价格回到观察区。",
+            "entry_conditions": "放量突破近 20 日平台。",
+            "exit_conditions": "跌破 20 日线或景气数据转弱。",
+            "not_buy_conditions": "高开过多或板块退潮时不买。",
+            "max_position_pct": 0.1,
+            "target_holding_days": 30,
+            "review_frequency_days": 7,
+            "as_of_date": "2026-06-21",
+        },
+    )
+    assert thesis.status_code == 200
+    assert thesis.json()["completeness_status"] == "complete"
+    assert thesis.json()["bound_position"]["ticker"] == "300750.SZ"
 
+    theses = client.get("/api/advisor/theses", params={"portfolio_id": "cn_a_main"})
+    assert theses.status_code == 200
+    assert theses.json()["thesis_count"] == 1
+    assert theses.json()["theses"][0]["can_enter_ready_to_buy"] is True
+
+    assert client.post("/api/advisor/place-order", json={}).status_code == 404

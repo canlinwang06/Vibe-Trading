@@ -171,10 +171,20 @@ def test_core_tables_include_requirement_fields(tmp_path: Path) -> None:
     assert {"lot_id", "buy_price", "remaining_quantity", "cost_basis"}.issubset(
         store.table_columns("position_lots")
     )
-    assert {"thesis_id", "invalidation_conditions", "evidence_json"}.issubset(
+    assert {
+        "thesis_id",
+        "invalidation_conditions",
+        "entry_conditions",
+        "exit_conditions",
+        "not_buy_conditions",
+        "review_frequency_days",
+        "next_review_date",
+        "completeness_status",
+        "evidence_json",
+    }.issubset(
         store.table_columns("investment_theses")
     )
-    assert {"item_id", "trigger_price", "not_buy_conditions"}.issubset(
+    assert {"item_id", "thesis_id", "trigger_price", "not_buy_conditions"}.issubset(
         store.table_columns("watchlist_items")
     )
     assert {"recommendation_id", "action_type", "evidence_json"}.issubset(
