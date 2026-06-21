@@ -589,6 +589,257 @@ PR03_CORE_TABLES: tuple[TableSpec, ...] = (
         )
         """,
     ),
+    TableSpec(
+        "portfolios",
+        """
+        CREATE TABLE IF NOT EXISTS portfolios (
+          portfolio_id VARCHAR PRIMARY KEY,
+          portfolio_name VARCHAR,
+          base_currency VARCHAR DEFAULT 'CNY',
+          initial_cash DOUBLE,
+          cash_balance DOUBLE,
+          research_only BOOLEAN DEFAULT true,
+          live_trading BOOLEAN DEFAULT false,
+          status VARCHAR,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "positions",
+        """
+        CREATE TABLE IF NOT EXISTS positions (
+          position_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          sector_id VARCHAR,
+          sector_name VARCHAR,
+          strategy_type VARCHAR,
+          strategy_cycle VARCHAR,
+          total_quantity DOUBLE,
+          available_quantity DOUBLE,
+          average_cost DOUBLE,
+          invested_cost DOUBLE,
+          realized_pnl DOUBLE,
+          last_price DOUBLE,
+          market_value DOUBLE,
+          unrealized_pnl DOUBLE,
+          status VARCHAR,
+          first_buy_date DATE,
+          last_trade_date DATE,
+          thesis_id VARCHAR,
+          stop_loss_price DOUBLE,
+          take_profit_price DOUBLE,
+          next_review_date DATE,
+          evidence_json TEXT,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "advisor_transactions",
+        """
+        CREATE TABLE IF NOT EXISTS advisor_transactions (
+          transaction_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          trade_date DATE,
+          trade_time TIMESTAMP,
+          action VARCHAR,
+          price DOUBLE,
+          quantity DOUBLE,
+          gross_amount DOUBLE,
+          fees DOUBLE,
+          net_amount DOUBLE,
+          strategy_type VARCHAR,
+          strategy_cycle VARCHAR,
+          thesis_id VARCHAR,
+          reason TEXT,
+          source_command TEXT,
+          idempotency_key VARCHAR,
+          created_by VARCHAR,
+          research_only BOOLEAN DEFAULT true,
+          live_trading BOOLEAN DEFAULT false,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "position_lots",
+        """
+        CREATE TABLE IF NOT EXISTS position_lots (
+          lot_id VARCHAR PRIMARY KEY,
+          transaction_id VARCHAR,
+          portfolio_id VARCHAR,
+          position_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          buy_date DATE,
+          buy_price DOUBLE,
+          initial_quantity DOUBLE,
+          remaining_quantity DOUBLE,
+          fees DOUBLE,
+          cost_basis DOUBLE,
+          status VARCHAR,
+          thesis_id VARCHAR,
+          stop_loss_price DOUBLE,
+          take_profit_price DOUBLE,
+          max_position_pct DOUBLE,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "investment_theses",
+        """
+        CREATE TABLE IF NOT EXISTS investment_theses (
+          thesis_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          thesis_type VARCHAR,
+          strategy_type VARCHAR,
+          strategy_cycle VARCHAR,
+          thesis TEXT,
+          buy_reason TEXT,
+          expected_catalysts TEXT,
+          invalidation_conditions TEXT,
+          stop_loss_price DOUBLE,
+          take_profit_price DOUBLE,
+          max_position_pct DOUBLE,
+          target_holding_days INTEGER,
+          entry_rules_json TEXT,
+          exit_rules_json TEXT,
+          evidence_json TEXT,
+          status VARCHAR,
+          created_by VARCHAR,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "watchlist_items",
+        """
+        CREATE TABLE IF NOT EXISTS watchlist_items (
+          item_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          sector_id VARCHAR,
+          sector_name VARCHAR,
+          theme VARCHAR,
+          strategy_type VARCHAR,
+          strategy_cycle VARCHAR,
+          watch_status VARCHAR,
+          target_buy_price DOUBLE,
+          trigger_price DOUBLE,
+          stop_loss_price DOUBLE,
+          max_position_pct DOUBLE,
+          not_buy_conditions TEXT,
+          reason TEXT,
+          evidence_json TEXT,
+          next_review_date DATE,
+          created_by VARCHAR,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "advisor_action_recommendations",
+        """
+        CREATE TABLE IF NOT EXISTS advisor_action_recommendations (
+          recommendation_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          as_of_date DATE,
+          action_type VARCHAR,
+          action_label VARCHAR,
+          ticker VARCHAR,
+          ticker_name VARCHAR,
+          priority INTEGER,
+          confidence DOUBLE,
+          target_price DOUBLE,
+          stop_loss_price DOUBLE,
+          take_profit_price DOUBLE,
+          max_position_pct DOUBLE,
+          expected_holding_days INTEGER,
+          reason TEXT,
+          evidence_json TEXT,
+          data_as_of TIMESTAMP,
+          data_freshness VARCHAR,
+          status VARCHAR,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "advisor_action_snapshots",
+        """
+        CREATE TABLE IF NOT EXISTS advisor_action_snapshots (
+          snapshot_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          snapshot_date DATE,
+          snapshot_type VARCHAR,
+          headline VARCHAR,
+          summary TEXT,
+          market_state VARCHAR,
+          action_summary_json TEXT,
+          holdings_summary_json TEXT,
+          watchlist_summary_json TEXT,
+          risk_summary_json TEXT,
+          evidence_json TEXT,
+          data_as_of TIMESTAMP,
+          data_freshness VARCHAR,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "advisor_command_events",
+        """
+        CREATE TABLE IF NOT EXISTS advisor_command_events (
+          command_id VARCHAR PRIMARY KEY,
+          idempotency_key VARCHAR,
+          command_type VARCHAR,
+          source VARCHAR,
+          portfolio_id VARCHAR,
+          status VARCHAR,
+          request_json TEXT,
+          response_json TEXT,
+          error_message TEXT,
+          created_by VARCHAR,
+          research_only BOOLEAN DEFAULT true,
+          live_trading BOOLEAN DEFAULT false,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
+    TableSpec(
+        "external_validation_results",
+        """
+        CREATE TABLE IF NOT EXISTS external_validation_results (
+          validation_id VARCHAR PRIMARY KEY,
+          portfolio_id VARCHAR,
+          source VARCHAR,
+          source_ref VARCHAR,
+          subject_type VARCHAR,
+          subject_id VARCHAR,
+          validation_date DATE,
+          status VARCHAR,
+          metrics_json TEXT,
+          summary TEXT,
+          raw_result_json TEXT,
+          created_by VARCHAR,
+          created_at TIMESTAMP
+        )
+        """,
+    ),
 )
 
 PR03_CORE_TABLE_NAMES = tuple(table.name for table in PR03_CORE_TABLES)
