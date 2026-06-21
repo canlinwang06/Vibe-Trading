@@ -99,6 +99,13 @@ def _get_goal_store():
     return _goal_store
 
 
+def _get_advisor_service():
+    """Return the local investment-advisor ledger service."""
+    from src.advisor.service import AdvisorService
+
+    return AdvisorService()
+
+
 def _json_ok(**payload: Any) -> str:
     """Return a standard MCP JSON success envelope."""
     return json.dumps({"status": "ok", **payload}, ensure_ascii=False, indent=2)
@@ -406,6 +413,149 @@ def update_research_goal_status(
         return _json_error(str(exc), error_type="stale_goal")
     except ValueError as exc:
         return _json_error(str(exc), error_type="validation")
+
+
+# ---------------------------------------------------------------------------
+# Personal investment advisor tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def advisor_record_transaction(
+    ticker: str,
+    action: str,
+    price: float,
+    quantity: float,
+    portfolio_id: str = "cn_a_main",
+    ticker_name: str | None = None,
+    trade_date: str | None = None,
+    fees: float = 0.0,
+    strategy_type: str | None = None,
+    strategy_cycle: str | None = None,
+    thesis: str | None = None,
+    stop_loss_price: float | None = None,
+    take_profit_price: float | None = None,
+    idempotency_key: str | None = None,
+    source_command: str | None = None,
+) -> str:
+    """Record a research-only buy/sell fact in the local advisor ledger.
+
+    This tool never places broker orders. It only updates Vibe-Trading's local
+    research ledger so the advisor pages can show current holdings.
+    """
+    try:
+        result = _get_advisor_service().record_transaction(
+            portfolio_id=portfolio_id,
+            ticker=ticker,
+            ticker_name=ticker_name,
+            action=action,
+            price=price,
+            quantity=quantity,
+            trade_date=trade_date,
+            fees=fees,
+            strategy_type=strategy_type,
+            strategy_cycle=strategy_cycle,
+            thesis=thesis,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            idempotency_key=idempotency_key,
+            source_command=source_command,
+            created_by="codex_mcp",
+        )
+        return _json_ok(result=result)
+    except Exception as exc:  # noqa: BLE001 - surfaced to MCP client as validation text
+        return _json_error(str(exc), error_type="advisor_transaction")
+
+
+@mcp.tool
+def advisor_upsert_thesis(
+    ticker: str,
+    portfolio_id: str = "cn_a_main",
+    ticker_name: str | None = None,
+    strategy_type: str | None = None,
+    strategy_cycle: str | None = None,
+    thesis: str | None = None,
+    buy_reason: str | None = None,
+    entry_conditions: str | None = None,
+    exit_conditions: str | None = None,
+    not_buy_conditions: str | None = None,
+    invalidation_conditions: str | None = None,
+    stop_loss_price: float | None = None,
+    take_profit_price: float | None = None,
+    max_position_pct: float | None = None,
+    target_holding_days: int | None = None,
+    review_frequency_days: int | None = None,
+    as_of_date: str | None = None,
+) -> str:
+    """Create or update an investment thesis for a holding or watchlist stock."""
+    try:
+        result = _get_advisor_service().upsert_thesis(
+            portfolio_id=portfolio_id,
+            ticker=ticker,
+            ticker_name=ticker_name,
+            strategy_type=strategy_type,
+            strategy_cycle=strategy_cycle,
+            thesis=thesis,
+            buy_reason=buy_reason,
+            entry_conditions=entry_conditions,
+            exit_conditions=exit_conditions,
+            not_buy_conditions=not_buy_conditions,
+            invalidation_conditions=invalidation_conditions,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            max_position_pct=max_position_pct,
+            target_holding_days=target_holding_days,
+            review_frequency_days=review_frequency_days,
+            as_of_date=as_of_date,
+            created_by="codex_mcp",
+        )
+        return _json_ok(result=result)
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(str(exc), error_type="advisor_thesis")
+
+
+@mcp.tool
+def advisor_upsert_watchlist_item(
+    ticker: str,
+    portfolio_id: str = "cn_a_main",
+    ticker_name: str | None = None,
+    theme: str | None = None,
+    trigger_price: float | None = None,
+    target_buy_price: float | None = None,
+    max_position_pct: float | None = None,
+    not_buy_conditions: str | None = None,
+    reason: str | None = None,
+) -> str:
+    """Add or update a research-only watchlist candidate."""
+    try:
+        result = _get_advisor_service().upsert_watchlist_item(
+            portfolio_id=portfolio_id,
+            ticker=ticker,
+            ticker_name=ticker_name,
+            theme=theme,
+            trigger_price=trigger_price,
+            target_buy_price=target_buy_price,
+            max_position_pct=max_position_pct,
+            not_buy_conditions=not_buy_conditions,
+            reason=reason,
+            created_by="codex_mcp",
+        )
+        return _json_ok(result=result)
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(str(exc), error_type="advisor_watchlist")
+
+
+@mcp.tool
+def advisor_today_snapshot(portfolio_id: str = "cn_a_main", as_of_date: str | None = None) -> str:
+    """Return the display-ready local advisor today snapshot."""
+    try:
+        result = _get_advisor_service().today_snapshot(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+        )
+        return _json_ok(result=result)
+    except Exception as exc:  # noqa: BLE001
+        return _json_error(str(exc), error_type="advisor_snapshot")
 
 
 # ---------------------------------------------------------------------------
