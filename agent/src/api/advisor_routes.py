@@ -204,3 +204,35 @@ def register_advisor_routes(app: FastAPI, require_local_or_auth: AuthDep | None 
             "research_only": True,
             "live_trading": False,
         }
+
+    @app.get("/api/advisor/prices", dependencies=[Depends(auth)])
+    def resolve_prices(
+        ticker: list[str] = Query(default_factory=list),
+        as_of_date: str | None = Query(None, min_length=10, max_length=10),
+        stale_after_days: int = Query(5, ge=1, le=30),
+    ) -> dict[str, Any]:
+        try:
+            return _service().resolve_prices(
+                tickers=ticker,
+                as_of_date=as_of_date,
+                stale_after_days=stale_after_days,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/advisor/portfolio-prices", dependencies=[Depends(auth)])
+    def resolve_portfolio_prices(
+        portfolio_id: str = Query(DEFAULT_PORTFOLIO_ID, min_length=3, max_length=80),
+        as_of_date: str | None = Query(None, min_length=10, max_length=10),
+        include_watchlist: bool = Query(True),
+        stale_after_days: int = Query(5, ge=1, le=30),
+    ) -> dict[str, Any]:
+        try:
+            return _service().resolve_portfolio_prices(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                include_watchlist=include_watchlist,
+                stale_after_days=stale_after_days,
+            )
+        except AdvisorError as exc:
+            raise _http_error(exc) from exc

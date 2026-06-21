@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -212,6 +213,93 @@ def test_advisor_thesis_without_exit_condition_is_incomplete(service: AdvisorSer
     assert service.list_theses(include_incomplete=False) == []
 
 
+def _seed_market_price(
+    store: AShareDataStore,
+    *,
+    ticker: str,
+    ticker_name: str,
+    trade_date: date,
+    close: float,
+    suspended: bool = False,
+) -> None:
+    store.initialize()
+    with store.connect() as conn:
+        conn.execute("DELETE FROM assets WHERE ticker = ?", [ticker])
+        conn.execute(
+            """
+            INSERT INTO assets (ticker, ticker_name, exchange, asset_type, active, updated_at)
+            VALUES (?, ?, ?, 'stock', true, now())
+            """,
+            [ticker, ticker_name, ticker.split(".")[1]],
+        )
+        conn.execute(
+            "DELETE FROM market_daily WHERE trade_date = ? AND ticker = ?",
+            [trade_date, ticker],
+        )
+        conn.execute(
+            """
+            INSERT INTO market_daily (
+              trade_date, ticker, open, high, low, close, volume, amount,
+              turnover, adj_factor, limit_status, suspended, source, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1000000, 50000000, 0.03, 1.0, 'normal', ?, 'unit_test', now())
+            """,
+            [trade_date, ticker, close * 0.98, close * 1.02, close * 0.97, close, suspended],
+        )
+
+
+def test_advisor_price_resolver_returns_latest_trade_date_price(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_market_price(
+        store,
+        ticker="300308.SZ",
+        ticker_name="中际旭创",
+        trade_date=date(2026, 6, 19),
+        close=88.5,
+    )
+
+    result = service.resolve_prices(tickers=["300308.SZ"], as_of_date="2026-06-19")
+    price = result["prices"][0]
+
+    assert price["close"] == 88.5
+    assert price["data_date"] == "2026-06-19"
+    assert price["is_latest"] is True
+    assert price["freshness_status"] == "latest"
+    assert price["source"] == "unit_test"
+
+
+def test_advisor_price_resolver_marks_weekend_recent_trade_data(
+    service: AdvisorService,
+    store: AShareDataStore,
+) -> None:
+    _seed_market_price(
+        store,
+        ticker="000977.SZ",
+        ticker_name="浪潮信息",
+        trade_date=date(2026, 6, 19),
+        close=42.0,
+    )
+
+    result = service.resolve_prices(tickers=["000977.SZ"], as_of_date="2026-06-21")
+    price = result["prices"][0]
+
+    assert price["is_latest"] is False
+    assert price["days_lag"] == 2
+    assert price["freshness_status"] == "non_trading_day_recent"
+    assert "最近交易日" in price["freshness_reason"]
+
+
+def test_advisor_price_resolver_degrades_when_data_missing(service: AdvisorService) -> None:
+    result = service.resolve_prices(tickers=["601138.SH"], as_of_date="2026-06-21")
+    price = result["prices"][0]
+
+    assert price["freshness_status"] == "missing"
+    assert price["close"] is None
+    assert "缺少可用行情数据" in price["freshness_reason"]
+
+
 def test_advisor_rejects_non_a_share_and_oversell(service: AdvisorService) -> None:
     with pytest.raises(AdvisorError, match="沪深 A 股"):
         service.record_transaction(ticker="AAPL.US", action="buy", price=100, quantity=1)
@@ -270,6 +358,22 @@ def test_advisor_api_round_trip_and_no_order_endpoint(client: TestClient) -> Non
     assert summary.json()["position_count"] == 1
     assert summary.json()["research_only"] is True
     assert summary.json()["live_trading"] is False
+
+    _seed_market_price(
+        AShareDataStore(),
+        ticker="300750.SZ",
+        ticker_name="宁德时代",
+        trade_date=date(2026, 6, 19),
+        close=190.5,
+    )
+    prices = client.get(
+        "/api/advisor/portfolio-prices",
+        params={"portfolio_id": "cn_a_main", "as_of_date": "2026-06-21"},
+    )
+    assert prices.status_code == 200
+    assert prices.json()["price_count"] == 1
+    assert prices.json()["prices"][0]["close"] == 190.5
+    assert prices.json()["prices"][0]["freshness_status"] == "non_trading_day_recent"
 
     thesis = client.post(
         "/api/advisor/theses",

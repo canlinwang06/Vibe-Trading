@@ -586,6 +586,80 @@ class AdvisorService:
             ).fetchall()
             return [self._fetch_thesis(conn, str(row[0])) for row in rows]
 
+    def resolve_prices(
+        self,
+        *,
+        tickers: list[str],
+        as_of_date: str | date | datetime | None = None,
+        stale_after_days: int = 5,
+    ) -> dict[str, Any]:
+        """Resolve latest available local prices and data-freshness status."""
+        self.store.initialize()
+        as_of = _parse_date(as_of_date)
+        normalized = []
+        for ticker in tickers:
+            clean = _normalize_ticker(ticker)
+            if clean not in normalized:
+                normalized.append(clean)
+        max_stale_days = max(int(stale_after_days), 1)
+        with self.store.connect(read_only=True) as conn:
+            prices = [
+                self._resolve_price_row(conn, ticker=ticker, as_of=as_of, stale_after_days=max_stale_days)
+                for ticker in normalized
+            ]
+        return {
+            "as_of_date": as_of.isoformat(),
+            "prices": prices,
+            "price_count": len(prices),
+            "research_only": True,
+            "live_trading": False,
+        }
+
+    def resolve_portfolio_prices(
+        self,
+        *,
+        portfolio_id: str = DEFAULT_PORTFOLIO_ID,
+        as_of_date: str | date | datetime | None = None,
+        include_watchlist: bool = True,
+        stale_after_days: int = 5,
+    ) -> dict[str, Any]:
+        """Resolve local prices for current holdings and optional watchlist names."""
+        self.store.initialize()
+        clean_portfolio_id = (portfolio_id or DEFAULT_PORTFOLIO_ID).strip() or DEFAULT_PORTFOLIO_ID
+        with self.store.connect(read_only=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT ticker
+                FROM positions
+                WHERE portfolio_id = ? AND status <> 'closed'
+                ORDER BY ticker
+                """,
+                [clean_portfolio_id],
+            ).fetchall()
+            tickers = [str(row[0]) for row in rows]
+            if include_watchlist:
+                watch_rows = conn.execute(
+                    """
+                    SELECT ticker
+                    FROM watchlist_items
+                    WHERE portfolio_id = ?
+                    ORDER BY ticker
+                    """,
+                    [clean_portfolio_id],
+                ).fetchall()
+                for row in watch_rows:
+                    ticker = str(row[0])
+                    if ticker not in tickers:
+                        tickers.append(ticker)
+        result = self.resolve_prices(
+            tickers=tickers,
+            as_of_date=as_of_date,
+            stale_after_days=stale_after_days,
+        )
+        result["portfolio_id"] = clean_portfolio_id
+        result["include_watchlist"] = include_watchlist
+        return result
+
     def _latest_thesis_id(self, conn: Any, portfolio_id: str, ticker: str) -> str | None:
         row = conn.execute(
             """
@@ -598,6 +672,86 @@ class AdvisorService:
             [portfolio_id, ticker],
         ).fetchone()
         return str(row[0]) if row else None
+
+    def _resolve_price_row(
+        self,
+        conn: Any,
+        *,
+        ticker: str,
+        as_of: date,
+        stale_after_days: int,
+    ) -> dict[str, Any]:
+        asset = conn.execute(
+            "SELECT ticker_name FROM assets WHERE ticker = ? LIMIT 1",
+            [ticker],
+        ).fetchone()
+        row = conn.execute(
+            """
+            SELECT trade_date, ticker, open, high, low, close, volume, amount,
+                   turnover, limit_status, suspended, source, created_at
+            FROM market_daily
+            WHERE ticker = ? AND trade_date <= ?
+            ORDER BY trade_date DESC
+            LIMIT 1
+            """,
+            [ticker, as_of],
+        ).fetchone()
+        if row is None:
+            return {
+                "ticker": ticker,
+                "ticker_name": asset[0] if asset else ticker,
+                "as_of_date": as_of.isoformat(),
+                "data_date": None,
+                "close": None,
+                "source": None,
+                "is_latest": False,
+                "freshness_status": "missing",
+                "freshness_reason": "缺少可用行情数据，建议页面只能降级展示。",
+                "suspended": False,
+                "limit_status": None,
+            }
+        data_date = row[0]
+        if isinstance(data_date, datetime):
+            data_date = data_date.date()
+        gap_days = (as_of - data_date).days
+        is_latest = gap_days == 0
+        suspended = bool(row[10])
+        if suspended:
+            status = "suspended"
+            reason = "最新可用行情标记为停牌，价格只用于持仓展示，不应直接触发交易建议。"
+        elif is_latest:
+            status = "latest"
+            reason = "交易日行情数据已更新到当前分析日期。"
+        elif as_of.weekday() >= 5 and gap_days <= stale_after_days:
+            status = "non_trading_day_recent"
+            reason = "当前分析日期为周末或非交易日，使用最近交易日数据。"
+        elif gap_days <= stale_after_days:
+            status = "recent_previous_trade"
+            reason = "当前分析日期没有同日行情，使用最近可用交易日数据。"
+        else:
+            status = "stale"
+            reason = f"最近行情距离分析日期已有 {gap_days} 天，数据可能过期。"
+        return {
+            "ticker": row[1],
+            "ticker_name": asset[0] if asset else row[1],
+            "as_of_date": as_of.isoformat(),
+            "data_date": data_date.isoformat(),
+            "open": row[2],
+            "high": row[3],
+            "low": row[4],
+            "close": row[5],
+            "volume": row[6],
+            "amount": row[7],
+            "turnover": row[8],
+            "limit_status": row[9],
+            "suspended": suspended,
+            "source": row[11],
+            "created_at": _dt_or_none(row[12]),
+            "is_latest": is_latest,
+            "days_lag": gap_days,
+            "freshness_status": status,
+            "freshness_reason": reason,
+        }
 
     def _thesis_created_at(self, conn: Any, thesis_id: str) -> datetime | None:
         row = conn.execute(
