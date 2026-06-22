@@ -17,9 +17,16 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api_server
+
+
+@pytest.fixture(autouse=True)
+def legacy_live_runtime_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the live runtime itself, not PR-01 product policy."""
+    monkeypatch.setenv("CN_A_ONLY", "0")
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:

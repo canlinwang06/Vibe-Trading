@@ -23,6 +23,7 @@ from typing import Any
 
 from src.agent.tools import BaseTool
 from src.live.mandate.commit import _normalize_limits, save_proposal
+from src.market_policy import cn_a_only_enabled
 
 #: Ordered profile templates synthesized when the caller gives no explicit
 #: profiles. Each is a fraction of the funded ceiling so they always clamp down.
@@ -111,6 +112,18 @@ class ProposeMandateProfilesTool(BaseTool):
             JSON string of the ``mandate.proposal`` payload, or an error
             envelope.
         """
+        if cn_a_only_enabled():
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": (
+                        "CN_A_ONLY keeps this workspace in research, simulation, and backtesting mode; "
+                        "live mandate proposals are disabled."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
         broker = str(kwargs.get("broker") or "").strip().lower()
         if not broker:
             return json.dumps({"status": "error", "error": "broker is required"}, ensure_ascii=False)

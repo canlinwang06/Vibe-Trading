@@ -74,17 +74,17 @@ describe("Runtime page", () => {
 
     render(<Runtime />);
 
-    expect(await screen.findByText("Live / Paper Runtime Status")).toBeInTheDocument();
-    expect(screen.getByText("Clear")).toBeInTheDocument();
+    expect(await screen.findByText("实盘 / 模拟运行时状态")).toBeInTheDocument();
+    expect(screen.getByText("正常")).toBeInTheDocument();
     expect(screen.getByText("paper")).toBeInTheDocument();
-    expect(screen.getByText("auth present")).toBeInTheDocument();
-    expect(screen.getByText("runner alive")).toBeInTheDocument();
-    expect(screen.getByText("runtime active")).toBeInTheDocument();
+    expect(screen.getAllByText("已授权").length).toBeGreaterThan(0);
+    expect(screen.getByText("runner 存活")).toBeInTheDocument();
+    expect(screen.getByText("运行时活跃")).toBeInTheDocument();
     expect(screen.getByText("acct-1")).toBeInTheDocument();
-    expect(screen.getByText(/\$750\/order/)).toBeInTheDocument();
+    expect(screen.getByText(/\$750\/单/)).toBeInTheDocument();
     expect(screen.getByText("sandbox")).toBeInTheDocument();
-    expect(screen.getByText("auth missing")).toBeInTheDocument();
-    expect(screen.getByText("dormant")).toBeInTheDocument();
+    expect(screen.getByText("未授权")).toBeInTheDocument();
+    expect(screen.getByText("休眠")).toBeInTheDocument();
   });
 
   it("fails closed when live status is unavailable", async () => {
@@ -92,9 +92,9 @@ describe("Runtime page", () => {
 
     render(<Runtime />);
 
-    expect(await screen.findByText("Runtime status unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("运行时状态不可用")).toBeInTheDocument();
     expect(screen.getByText("backend offline")).toBeInTheDocument();
-    expect(screen.getByText(/Treat connector runtime as unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/请将连接器运行时视为不可用/)).toBeInTheDocument();
   });
 
   it("refreshes by reading live status again", async () => {
@@ -103,7 +103,7 @@ describe("Runtime page", () => {
     render(<Runtime />);
     await screen.findByText("paper");
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
 
     expect(apiMock.getLiveStatus).toHaveBeenCalledTimes(2);
   });

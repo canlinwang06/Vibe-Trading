@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON_BIN="${PYTHON:-$ROOT/.venv/bin/python}"
+
+step() {
+  printf "\n==> %s\n" "$1"
+}
+
+fail() {
+  printf "PR-01 acceptance failed: %s\n" "$1" >&2
+  exit 1
+}
+
+step "Check PR-01 backend market policy"
+CN_A_ONLY=1 PYTHONPATH="$ROOT/agent" "$PYTHON_BIN" -m pytest -q "$ROOT/agent/tests/test_market_policy.py"
+
+step "Check PR-01 welcome screen"
+npm --prefix "$ROOT/frontend" run test:run -- WelcomeScreen.test.tsx
+
+step "Check user-facing A-share copy"
+if rg -n "BTC-USDT|AAPL|Options Greeks|Trading Connectors|Crypto|crypto" \
+  "$ROOT/frontend/src/components/chat/WelcomeScreen.tsx" \
+  "$ROOT/frontend/src/pages/Correlation.tsx"; then
+  fail "legacy non-A-share examples remain in PR-01 entry points"
+fi
+
+printf "\nPR-01 acceptance passed.\n"

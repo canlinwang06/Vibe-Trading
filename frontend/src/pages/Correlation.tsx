@@ -6,7 +6,7 @@ import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
 const WINDOWS = [30, 60, 90, 180, 365] as const;
 
 export function Correlation() {
-  const [codes, setCodes] = useState("BTC-USDT,ETH-USDT,SPY,AAPL");
+  const [codes, setCodes] = useState("600519.SH,300750.SZ,000001.SZ");
   const [days, setDays] = useState<number>(90);
   const [method, setMethod] = useState<"pearson" | "spearman">("pearson");
   const [loading, setLoading] = useState(false);
@@ -47,11 +47,11 @@ export function Correlation() {
             type="text"
             value={codes}
             onChange={(e) => setCodes(e.target.value)}
-            placeholder="BTC-USDT,ETH-USDT,SPY"
+            placeholder="600519.SH,300750.SZ,000001.SZ"
             className="w-full px-3 py-2 rounded-md border bg-background text-sm"
           />
           <p className="text-xs text-muted-foreground">
-            Comma-separated ticker symbols, e.g. BTC-USDT,ETH-USDT,AAPL,SPY
+            仅支持沪深 A 股代码，例如 600519.SH、300750.SZ、000001.SZ。
           </p>
         </div>
 

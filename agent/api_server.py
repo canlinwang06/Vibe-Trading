@@ -1658,7 +1658,7 @@ async def health_check():
 
 @app.get("/correlation")
 async def get_correlation_matrix(
-    codes: str = Query(..., description="Comma-separated asset codes, e.g. BTC-USDT,ETH-USDT,SPY"),
+    codes: str = Query(..., description="Comma-separated A-share stock codes, e.g. 600519.SH,300750.SZ"),
     days: int = Query(90, description="Lookback window in days", ge=7, le=365),
     method: str = Query("pearson", description="Correlation method: pearson or spearman"),
 ):
@@ -1668,6 +1668,7 @@ async def get_correlation_matrix(
     computes pairwise correlation of daily returns over the lookback window.
     """
     from backtest.correlation import compute_correlation_matrix
+    from src.market_policy import MarketPolicyError, validate_a_share_codes
 
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) < 2:
@@ -1676,6 +1677,10 @@ async def get_correlation_matrix(
         raise HTTPException(status_code=400, detail="Maximum 20 assets per request")
     if method not in ("pearson", "spearman"):
         raise HTTPException(status_code=400, detail="method must be 'pearson' or 'spearman'")
+    try:
+        code_list = validate_a_share_codes(code_list, surface="correlation")
+    except MarketPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         result = compute_correlation_matrix(codes=code_list, days=days, method=method)
@@ -2721,6 +2726,20 @@ def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def _deny_live_action_in_cn_a_only(action: str) -> None:
+    """Block live-trading enablement while the workspace is A-share research-only."""
+    from src.market_policy import cn_a_only_enabled
+
+    if cn_a_only_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "CN_A_ONLY research mode allows research, simulation, and backtesting only; "
+                f"live connector action '{action}' is disabled."
+            ),
+        )
+
+
 @app.post("/mandate/commit", dependencies=[Depends(require_auth)])
 async def commit_mandate_endpoint(payload: CommitMandateRequest):
     """Commit a user-selected mandate profile — the only mandate write path.
@@ -2731,6 +2750,7 @@ async def commit_mandate_endpoint(payload: CommitMandateRequest):
     ``mandate.committed`` + ``live.action`` event so all surfaces reflect the
     newly active mandate.
     """
+    _deny_live_action_in_cn_a_only("mandate.commit")
     if payload.consent_ack is not True:
         raise HTTPException(status_code=400, detail="consent_ack must be true to commit a mandate")
 
@@ -2801,6 +2821,7 @@ async def resume_live_endpoint(payload: LiveHaltRequest):
     Deletes the HALT sentinel via :func:`src.live.halt.clear_halt` (an explicit
     re-enable; never an agent tool). Emits a ``live.resumed`` event.
     """
+    _deny_live_action_in_cn_a_only("live.resume")
     from src.live.halt import clear_halt
 
     try:
@@ -2976,6 +2997,7 @@ async def live_authorize_endpoint(payload: LiveAuthorizeRequest):
     server-side redirect. A Web UI user reaches this endpoint to DISCOVER how to
     start the flow. It performs no authorization itself and never returns a token.
     """
+    _deny_live_action_in_cn_a_only("live.authorize")
     broker = payload.broker.strip().lower()
     if not broker:
         raise HTTPException(status_code=400, detail="broker must not be blank")
@@ -3181,6 +3203,7 @@ async def start_runner_endpoint(payload: LiveRunnerControlRequest):
     dead/halted channel. Idempotent: a request for an already-running broker
     returns ``already_running`` without spawning a second task.
     """
+    _deny_live_action_in_cn_a_only("live.runner.start")
     from src.live.halt import halt_flag_set
 
     broker = payload.broker.strip().lower()
@@ -3265,6 +3288,61 @@ async def stop_runner_endpoint(payload: LiveRunnerControlRequest):
 
 from src.api.alpha_routes import register_alpha_routes  # noqa: E402
 register_alpha_routes(app)
+
+
+# ============================================================================
+# A-share data routes (Web UI / local workbench)
+# ============================================================================
+
+from src.api.ashare_routes import register_ashare_routes  # noqa: E402
+register_ashare_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.ashare_collection_routes import register_ashare_collection_routes  # noqa: E402
+register_ashare_collection_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.ashare_dashboard_routes import register_ashare_dashboard_routes  # noqa: E402
+register_ashare_dashboard_routes(app, require_local_or_auth=require_local_or_auth)
+
+
+# ============================================================================
+# Event radar source routes (Web UI / local workbench)
+# ============================================================================
+
+from src.api.event_radar_routes import register_event_radar_routes  # noqa: E402
+register_event_radar_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.event_records_routes import register_event_records_routes  # noqa: E402
+register_event_records_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.event_reaction_routes import register_event_reaction_routes  # noqa: E402
+register_event_reaction_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.candidate_pool_routes import register_candidate_pool_routes  # noqa: E402
+register_candidate_pool_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.strategy_lab_routes import register_strategy_lab_routes  # noqa: E402
+register_strategy_lab_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.strategy_idea_routes import register_strategy_idea_routes  # noqa: E402
+register_strategy_idea_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.portfolio_risk_routes import register_portfolio_risk_routes  # noqa: E402
+register_portfolio_risk_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.advisor_routes import register_advisor_routes  # noqa: E402
+register_advisor_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.joinquant_routes import register_joinquant_routes  # noqa: E402
+register_joinquant_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.joinquant_task_routes import register_joinquant_task_routes  # noqa: E402
+register_joinquant_task_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.strategy_lifecycle_routes import register_strategy_lifecycle_routes  # noqa: E402
+register_strategy_lifecycle_routes(app, require_local_or_auth=require_local_or_auth)
+
+from src.api.daily_workflow_routes import register_daily_workflow_routes  # noqa: E402
+register_daily_workflow_routes(app, require_local_or_auth=require_local_or_auth)
 
 
 # ============================================================================

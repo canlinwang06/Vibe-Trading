@@ -143,6 +143,397 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getAdvisorTodaySnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorTodaySnapshot>(`/api/advisor/today-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorHoldingsSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorHoldingsSnapshot>(`/api/advisor/holdings-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorWatchlistSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorWatchlistSnapshot>(`/api/advisor/watchlist-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorStocksSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<AdvisorStocksSnapshot>(`/api/advisor/stocks-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorJournalSnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AdvisorJournalSnapshot>(`/api/advisor/journal-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAdvisorMemorySnapshot: (params: AdvisorSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_limit !== undefined) q.set("event_limit", String(params.event_limit));
+    const qs = q.toString();
+    return request<AdvisorMemorySnapshot>(`/api/advisor/memory-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getDailyIntelligence: (params: DailyIntelligenceQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    const qs = q.toString();
+    return request<DailyIntelligenceResponse>(`/api/ashare-dashboard/daily-intelligence${qs ? `?${qs}` : ""}`);
+  },
+  getSectorStockDashboard: (params: SectorStockDashboardQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.theme) q.set("theme", params.theme);
+    const qs = q.toString();
+    return request<SectorStockDashboardResponse>(`/api/ashare-dashboard/sector-stock-analysis${qs ? `?${qs}` : ""}`);
+  },
+  runAShareCollection: (body: AShareCollectionRunRequest) =>
+    request<AShareCollectionRunResponse>("/api/ashare/collection/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getAShareMarketSnapshot: (params: AShareSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AShareMarketSnapshotResponse>(`/api/ashare/market-snapshot${qs ? `?${qs}` : ""}`);
+  },
+  getAShareSectorAnomalies: (params: AShareSnapshotQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<AShareSectorAnomalySnapshotResponse>(`/api/ashare/sector-anomalies${qs ? `?${qs}` : ""}`);
+  },
+  listEventRecords: (params: EventRecordQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_type) q.set("event_type", params.event_type);
+    if (params.event_subtype) q.set("event_subtype", params.event_subtype);
+    if (params.from_date) q.set("from_date", params.from_date);
+    if (params.to_date) q.set("to_date", params.to_date);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRecordListResponse>(`/api/event-records${qs ? `?${qs}` : ""}`);
+  },
+  listEventSources: (params: EventSourceQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.enabled_only !== undefined) q.set("enabled_only", String(params.enabled_only));
+    const qs = q.toString();
+    return request<EventSourceListResponse>(`/api/event-radar/sources${qs ? `?${qs}` : ""}`);
+  },
+  listEventRawDocuments: (params: EventRawDocumentQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.source_type) q.set("source_type", params.source_type);
+    if (params.source_id) q.set("source_id", params.source_id);
+    const qs = q.toString();
+    return request<EventRawDocumentListResponse>(`/api/event-radar/raw-documents${qs ? `?${qs}` : ""}`);
+  },
+  collectEventDocuments: (body: EventRadarCollectRequest) =>
+    request<EventRadarCollectResponse>("/api/event-radar/collect/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  extractEventRadarEvents: (body: EventRadarExtractRequest) =>
+    request<EventRadarExtractResponse>("/api/event-radar/extract/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventRadarEvents: (params: EventRadarEventQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.event_type) q.set("event_type", params.event_type);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRadarEventListResponse>(`/api/event-radar/events${qs ? `?${qs}` : ""}`);
+  },
+  listEventRadarClusters: (params: EventRadarClusterQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.status) q.set("status", params.status);
+    if (params.min_relevance !== undefined) q.set("min_relevance", String(params.min_relevance));
+    const qs = q.toString();
+    return request<EventRadarClusterListResponse>(`/api/event-radar/clusters${qs ? `?${qs}` : ""}`);
+  },
+  listEventRadarThemeMap: (params: EventRadarThemeMapQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.theme) q.set("theme", params.theme);
+    const qs = q.toString();
+    return request<EventRadarThemeMapResponse>(`/api/event-radar/theme-map${qs ? `?${qs}` : ""}`);
+  },
+  mapEventRadarEvents: (body: EventRadarMapRequest) =>
+    request<EventRadarMapResponse>("/api/event-radar/map/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventSectorMappings: (params: EventMappingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventSectorMappingListResponse>(`/api/event-radar/mappings/sectors${qs ? `?${qs}` : ""}`);
+  },
+  listEventStockMappings: (params: EventMappingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventStockMappingListResponse>(`/api/event-radar/mappings/stocks${qs ? `?${qs}` : ""}`);
+  },
+  runSectorScoring: (body: SectorScoreRunRequest) =>
+    request<SectorScoreRunResponse>("/api/event-radar/sector-scores/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listSectorScores: (params: SectorScoreQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.min_score !== undefined) q.set("min_score", String(params.min_score));
+    const qs = q.toString();
+    return request<SectorScoreListResponse>(`/api/event-radar/sector-scores${qs ? `?${qs}` : ""}`);
+  },
+  joinQuantPreflight: (body: JoinQuantExportRequest) =>
+    request<JoinQuantPreflightResponse>("/api/joinquant/export/preflight", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantExportStrategyCode: (body: JoinQuantExportRequest) =>
+    request<JoinQuantStrategyCodeResponse>("/api/joinquant/export/strategy-code", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantExportCopyPackage: (body: JoinQuantExportRequest) =>
+    request<JoinQuantCopyPackageResponse>("/api/joinquant/export/copy-package", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantImportExecutionReports: (body: JoinQuantExecutionReportImportRequest) =>
+    request<JoinQuantExecutionReportImportResponse>("/api/joinquant/execution-reports/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantImportBacktestResult: (body: JoinQuantBacktestResultImportRequest) =>
+    request<JoinQuantBacktestResultImportResponse>("/api/joinquant/backtest-results/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantListExecutionReports: (params: JoinQuantExecutionReportQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.signal_date) q.set("signal_date", params.signal_date);
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<JoinQuantExecutionReportListResponse>(`/api/joinquant/execution-reports${qs ? `?${qs}` : ""}`);
+  },
+  joinQuantExecutionReportSummary: (params: JoinQuantExecutionReportSummaryQuery) => {
+    const q = new URLSearchParams();
+    q.set("portfolio_id", params.portfolio_id);
+    if (params.signal_date) q.set("signal_date", params.signal_date);
+    if (params.trade_date) q.set("trade_date", params.trade_date);
+    if (params.tolerance !== undefined) q.set("tolerance", String(params.tolerance));
+    return request<JoinQuantExecutionReportSummary>(`/api/joinquant/execution-reports/summary?${q.toString()}`);
+  },
+  joinQuantSimulationReadiness: (params: JoinQuantSimulationReadinessQuery) => {
+    const q = new URLSearchParams();
+    q.set("portfolio_id", params.portfolio_id);
+    if (params.lookback_days !== undefined) q.set("lookback_days", String(params.lookback_days));
+    if (params.min_batches !== undefined) q.set("min_batches", String(params.min_batches));
+    if (params.tolerance !== undefined) q.set("tolerance", String(params.tolerance));
+    if (params.max_failed_rate !== undefined) q.set("max_failed_rate", String(params.max_failed_rate));
+    if (params.max_missing_rate !== undefined) q.set("max_missing_rate", String(params.max_missing_rate));
+    if (params.max_deviation_rate !== undefined) q.set("max_deviation_rate", String(params.max_deviation_rate));
+    if (params.max_signal_delay_days !== undefined) q.set("max_signal_delay_days", String(params.max_signal_delay_days));
+    return request<JoinQuantSimulationReadinessReport>(`/api/joinquant/simulation-readiness?${q.toString()}`);
+  },
+  joinQuantCreateTask: (body: JoinQuantTaskCreateRequest) =>
+    request<JoinQuantTaskResponse>("/api/joinquant/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  joinQuantListTasks: (params: JoinQuantTaskQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<JoinQuantTaskListResponse>(`/api/joinquant/tasks${qs ? `?${qs}` : ""}`);
+  },
+  joinQuantUpdateTask: (taskId: string, body: JoinQuantTaskUpdateRequest) =>
+    request<JoinQuantTaskResponse>(`/api/joinquant/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  joinQuantAutomationPlan: (taskId: string, body: JoinQuantAutomationPlanRequest) =>
+    request<JoinQuantAutomationPlanResponse>(`/api/joinquant/tasks/${taskId}/automation-plan`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getStrategyLifecycleOverview: (params: StrategyLifecycleQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.refresh !== undefined) q.set("refresh", String(params.refresh));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategyLifecycleOverviewResponse>(`/api/strategy-lifecycle/overview${qs ? `?${qs}` : ""}`);
+  },
+  refreshStrategyLifecycle: () =>
+    request<StrategyLifecycleRefreshResponse>("/api/strategy-lifecycle/refresh", {
+      method: "POST",
+    }),
+  dailyWorkflowRun: (body: DailyWorkflowRunRequest) =>
+    request<DailyWorkflowRunResponse>("/api/daily-workflow/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategyTemplates: () => request<StrategyTemplateListResponse>("/api/strategy-lab/templates"),
+  seedStrategySpecs: (body: StrategySpecSeedRequest) =>
+    request<StrategySpecSeedResponse>("/api/strategy-lab/specs/seed", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategySpecs: (params: StrategySpecQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.enabled !== undefined && params.enabled !== null) q.set("enabled", String(params.enabled));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategySpecListResponse>(`/api/strategy-lab/specs${qs ? `?${qs}` : ""}`);
+  },
+  runStrategyBacktestBatch: (body: BacktestBatchRequest) =>
+    request<BacktestBatchResponse>("/api/strategy-lab/backtest-batch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategyBacktestRuns: (params: BacktestRunQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_id) q.set("strategy_id", params.strategy_id);
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<BacktestRunListResponse>(`/api/strategy-lab/backtest-runs${qs ? `?${qs}` : ""}`);
+  },
+  listStrategyBacktestRankings: (params: BacktestRankingQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.status) q.set("status", params.status);
+    if (params.min_score !== undefined && params.min_score !== null) q.set("min_score", String(params.min_score));
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<BacktestRankingResponse>(`/api/strategy-lab/backtest-rankings${qs ? `?${qs}` : ""}`);
+  },
+  generateStrategyIdeas: (body: StrategyIdeaGenerateRequest) =>
+    request<StrategyIdeaGenerateResponse>("/api/strategy-ideas/generate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listStrategyIdeas: (params: StrategyIdeaQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.theme) q.set("theme", params.theme);
+    if (params.strategy_type) q.set("strategy_type", params.strategy_type);
+    if (params.status) q.set("status", params.status);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<StrategyIdeaListResponse>(`/api/strategy-ideas${qs ? `?${qs}` : ""}`);
+  },
+  saveStrategyIdeaSpec: (ideaId: string, body: StrategyIdeaSaveSpecRequest = {}) =>
+    request<StrategyIdeaSaveSpecResponse>(`/api/strategy-ideas/${ideaId}/save-spec`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  allocateRiskPortfolio: (body: PortfolioAllocateRequest) =>
+    request<PortfolioAllocationResponse>("/api/portfolio-risk/allocate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listRiskPortfolioAllocations: (params: PortfolioAllocationQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<PortfolioAllocationListResponse>(`/api/portfolio-risk/allocations${qs ? `?${qs}` : ""}`);
+  },
+  getRiskTradePlan: (params: PortfolioTradePlanQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.portfolio_id) q.set("portfolio_id", params.portfolio_id);
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.max_single_stock_weight !== undefined) {
+      q.set("max_single_stock_weight", String(params.max_single_stock_weight));
+    }
+    if (params.max_sector_weight !== undefined) q.set("max_sector_weight", String(params.max_sector_weight));
+    const qs = q.toString();
+    return request<PortfolioTradePlanResponse>(`/api/portfolio-risk/trade-plan${qs ? `?${qs}` : ""}`);
+  },
+  listCandidatePool: (params: CandidatePoolQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.as_of_date) q.set("as_of_date", params.as_of_date);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    if (params.source) q.set("source", params.source);
+    if (params.included !== undefined && params.included !== null) q.set("included", String(params.included));
+    if (params.min_score !== undefined) q.set("min_score", String(params.min_score));
+    const qs = q.toString();
+    return request<CandidatePoolListResponse>(`/api/candidate-pool${qs ? `?${qs}` : ""}`);
+  },
+  buildCandidatePool: (body: CandidatePoolBuildRequest) =>
+    request<CandidatePoolBuildResponse>("/api/candidate-pool/build", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  addUserCandidate: (body: UserCandidateRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/user-add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  includeCandidate: (body: CandidateDecisionRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/include", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  excludeCandidate: (body: CandidateDecisionRequest) =>
+    request<CandidateRecord>("/api/candidate-pool/exclude", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  eventReactionsCalculate: (body: EventReactionCalculateRequest) =>
+    request<EventReactionCalculateResponse>("/api/event-reactions/calculate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listEventReactions: (params: EventReactionQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_id) q.set("event_id", params.event_id);
+    if (params.cluster_id) q.set("cluster_id", params.cluster_id);
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    if (params.window) q.set("window", params.window);
+    if (params.limit !== undefined) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<EventReactionListResponse>(`/api/event-reactions${qs ? `?${qs}` : ""}`);
+  },
+  eventReactionSummary: (params: EventReactionSummaryQuery = {}) => {
+    const q = new URLSearchParams();
+    if (params.event_subtype) q.set("event_subtype", params.event_subtype);
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    if (params.window) q.set("window", params.window);
+    const qs = q.toString();
+    return request<EventReactionSummaryResponse>(`/api/event-reactions/summary${qs ? `?${qs}` : ""}`);
+  },
 
   // Alpha Zoo API
   listAlphas: (params: AlphaListParams = {}) => {
@@ -276,6 +667,1665 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+}
+
+export interface DailyIntelligenceQuery {
+  as_of_date?: string | null;
+}
+
+export interface DashboardMetric {
+  label: string;
+  value: string;
+  delta?: string;
+  tone?: "success" | "warning" | "danger" | "info" | string;
+}
+
+export interface DashboardSectorHeat {
+  sector_id: string;
+  sector_name: string;
+  event_heat: number;
+  market_confirm: number;
+  breadth_score: number;
+  flow_score: number;
+  persistence_score: number;
+  crowding_risk: number;
+  sector_heat_score: number;
+  cycle_stage: string;
+  created_at?: string | null;
+}
+
+export interface DashboardEventTimelineItem {
+  event_id: string;
+  theme?: string | null;
+  summary: string;
+  time?: string | null;
+  relevance: number;
+  certainty: number;
+  source_name: string;
+  source_type: string;
+  source_url?: string | null;
+  verification_status: string;
+}
+
+export interface DashboardSourceFreshness {
+  source_type: string;
+  source_name: string;
+  enabled_count: number;
+  source_count: number;
+  fetched_count: number;
+  credibility: number;
+  status: string;
+}
+
+export interface DailyIntelligenceResponse {
+  status: string;
+  as_of_date: string;
+  data_mode: "local" | "sample" | string;
+  headline: string;
+  market_temperature: {
+    score: number;
+    label: string;
+    heat: number;
+    event_relevance: number;
+  };
+  market_metrics: DashboardMetric[];
+  sector_heat: DashboardSectorHeat[];
+  event_timeline: DashboardEventTimelineItem[];
+  source_freshness: DashboardSourceFreshness[];
+  codex_actions: string[];
+  warnings: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AShareSnapshotQuery {
+  trade_date?: string | null;
+  limit?: number;
+}
+
+export interface AShareStockSnapshotPayload {
+  trade_date?: string | null;
+  ticker: string;
+  ticker_name: string;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close: number;
+  volume?: number;
+  amount?: number | null;
+  turnover?: number | null;
+  pct_change?: number | null;
+  volume_ratio?: number | null;
+  sector_name?: string | null;
+  source?: string;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface AShareSectorSnapshotPayload {
+  trade_date?: string | null;
+  sector_id?: string | null;
+  sector_name: string;
+  sector_type?: string;
+  close?: number | null;
+  return?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  up_count?: number | null;
+  down_count?: number | null;
+  limit_up_count?: number | null;
+  member_count?: number | null;
+  leading_ticker?: string | null;
+  source?: string;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface AShareCollectionRunRequest {
+  trade_date?: string | null;
+  include_market?: boolean;
+  include_sector?: boolean;
+  include_news?: boolean;
+  include_announcements?: boolean;
+  stock_limit?: number;
+  sector_limit?: number;
+  anomaly_limit?: number;
+  document_limit?: number;
+  symbols?: string[] | null;
+  keywords?: string[] | null;
+  extract_events?: boolean;
+  continue_on_error?: boolean;
+  market_records?: AShareStockSnapshotPayload[] | null;
+  sector_records?: AShareSectorSnapshotPayload[] | null;
+  anomaly_source_records?: AShareStockSnapshotPayload[] | null;
+  documents?: DailyWorkflowDocumentPayload[] | null;
+}
+
+export interface AShareCollectorRun {
+  run_id: string;
+  run_date: string;
+  collector_type: string;
+  source_id: string;
+  status: string;
+  rows_requested: number;
+  rows_written: number;
+  error_message?: string | null;
+  metadata: Record<string, unknown>;
+  started_at?: string | null;
+  ended_at?: string | null;
+}
+
+export interface AShareCollectionStep {
+  name: string;
+  status: string;
+  message: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface AShareCollectionRunResponse {
+  status: string;
+  trade_date?: string | null;
+  step_count: number;
+  failed_step_count: number;
+  rows_written: number;
+  steps: AShareCollectionStep[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AShareMarketSnapshotRow {
+  trade_date: string;
+  ticker: string;
+  ticker_name: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  amount?: number | null;
+  turnover?: number | null;
+  limit_status: string;
+  suspended: boolean;
+  source: string;
+  created_at?: string | null;
+}
+
+export interface AShareMarketSnapshotResponse {
+  status: string;
+  trade_date: string;
+  row_count: number;
+  summary: {
+    sample_count: number;
+    limit_up_count: number;
+    suspended_count: number;
+    total_amount: number;
+    total_amount_yi: number;
+    anomaly_counts: Record<string, number>;
+  };
+  rows: AShareMarketSnapshotRow[];
+  collector_runs: AShareCollectorRun[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AShareSectorSnapshotRow {
+  trade_date: string;
+  sector_id: string;
+  sector_name: string;
+  return?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  up_count?: number | null;
+  down_count?: number | null;
+  limit_up_count?: number | null;
+  member_count?: number | null;
+  leading_ticker?: string | null;
+  source: string;
+  created_at?: string | null;
+}
+
+export interface AShareStockAnomalyRow {
+  trade_date: string;
+  ticker: string;
+  ticker_name: string;
+  anomaly_type: string;
+  pct_change?: number | null;
+  amount?: number | null;
+  turnover?: number | null;
+  volume_ratio?: number | null;
+  limit_status: string;
+  sector_name?: string | null;
+  source: string;
+  evidence: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface AShareSectorAnomalySnapshotResponse {
+  status: string;
+  trade_date: string;
+  sector_count: number;
+  anomaly_count: number;
+  sectors: AShareSectorSnapshotRow[];
+  anomalies: AShareStockAnomalyRow[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface EventRecordQuery {
+  limit?: number;
+  event_type?: string | null;
+  event_subtype?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRecordImpactSummary {
+  window: string;
+  status: string;
+  reaction_count: number;
+  sector_count: number;
+  stock_count: number;
+  avg_raw_return: number | null;
+  avg_abnormal_return: number | null;
+  worst_max_drawdown: number | null;
+  calculated_at?: string | null;
+}
+
+export interface EventRecord {
+  event_id: string;
+  cluster_id: string;
+  doc_id?: string | null;
+  event_time?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  knowable_time?: string | null;
+  tradable_time?: string | null;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  certainty: number;
+  a_share_relevance_score: number;
+  source_name?: string | null;
+  source_type?: string | null;
+  source_url?: string | null;
+  local_document_ref?: string | null;
+  evidence: Record<string, unknown>;
+  related_sectors: EventSectorMapping[];
+  related_stocks: EventStockMapping[];
+  impact: Record<string, EventRecordImpactSummary>;
+  impact_t1: EventRecordImpactSummary;
+  impact_t5: EventRecordImpactSummary;
+  impact_t20: EventRecordImpactSummary;
+  impact_t60: EventRecordImpactSummary;
+}
+
+export interface EventRecordListResponse {
+  status: string;
+  records: EventRecord[];
+  record_count: number;
+  impact_windows: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExportRequest {
+  portfolio_id: string;
+  signal_date?: string | null;
+  strategy_id?: string | null;
+  risk_notice?: string;
+  require_approved?: boolean;
+}
+
+export interface JoinQuantValidation {
+  status: "ok" | "blocked" | string;
+  checked_count: number;
+  error_count: number;
+  warning_count: number;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface JoinQuantPreflightResponse {
+  portfolio_id: string;
+  signal_date: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantStrategyCodeResponse {
+  status: string;
+  export_type: string;
+  portfolio_id: string;
+  signal_date: string;
+  strategy_id: string;
+  filename: string;
+  python_code: string;
+  risk_notice: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  manual_confirmation_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantPackageFile {
+  filename: string;
+  content_type: string;
+  content: string;
+}
+
+export interface JoinQuantPackageManifestFile {
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+export interface JoinQuantPackageManifest {
+  package_type: string;
+  strategy_id: string;
+  portfolio_id: string;
+  signal_date: string;
+  valid_for: string;
+  target_count: number;
+  total_exposure: number;
+  files: JoinQuantPackageManifestFile[];
+  manual_confirmation_required: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantCopyPackageResponse {
+  status: string;
+  export_type: string;
+  portfolio_id: string;
+  signal_date: string;
+  strategy_id: string;
+  manifest: JoinQuantPackageManifest;
+  files: JoinQuantPackageFile[];
+  clipboard_text: string;
+  validation: JoinQuantValidation;
+  copy_ready: boolean;
+  manual_confirmation_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportImportRequest {
+  portfolio_id: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  jq_task_id?: string | null;
+  replace?: boolean;
+  reports: Record<string, unknown>[];
+}
+
+export interface JoinQuantExecutionReportQuery {
+  portfolio_id?: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  limit?: number;
+}
+
+export interface JoinQuantExecutionReportSummaryQuery {
+  portfolio_id: string;
+  signal_date?: string | null;
+  trade_date?: string | null;
+  tolerance?: number;
+}
+
+export interface JoinQuantExecutionReport {
+  report_id: string;
+  signal_date: string;
+  trade_date: string;
+  portfolio_id: string;
+  ticker: string;
+  planned_weight: number;
+  executed_weight: number;
+  order_status: string;
+  fill_price?: number | null;
+  fill_amount?: number | null;
+  error_message?: string | null;
+  raw_report?: string;
+  created_at?: string;
+}
+
+export interface JoinQuantExecutionDeviation {
+  ticker: string;
+  planned_weight: number;
+  executed_weight: number;
+  abs_weight_diff: number;
+  order_status: string;
+  matched_signal: boolean;
+  needs_review: boolean;
+}
+
+export interface JoinQuantExecutionReportSummary {
+  status: "ok" | "needs_review" | string;
+  portfolio_id: string;
+  signal_date: string;
+  trade_date: string;
+  report_count: number;
+  signal_count: number;
+  matched_signal_count: number;
+  failed_count: number;
+  unmatched_report_count: number;
+  missing_report_count: number;
+  total_planned_weight: number;
+  total_executed_weight: number;
+  max_abs_weight_diff: number;
+  total_abs_weight_diff: number;
+  tolerance: number;
+  status_counts: Record<string, number>;
+  unmatched_reports: string[];
+  missing_reports: string[];
+  deviations: JoinQuantExecutionDeviation[];
+  action_required: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportImportResponse {
+  status: string;
+  imported_count: number;
+  portfolio_id: string;
+  signal_date: string;
+  trade_date: string;
+  jq_task_id?: string | null;
+  replace: boolean;
+  reports: JoinQuantExecutionReport[];
+  summary: JoinQuantExecutionReportSummary;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantBacktestResultImportRequest {
+  jq_task_id?: string | null;
+  strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id?: string;
+  replace?: boolean;
+  evidence?: Record<string, unknown>[] | null;
+  result: Record<string, unknown>;
+}
+
+export interface JoinQuantBacktestResult {
+  run_id: string;
+  strategy_id: string;
+  start_date: string;
+  end_date: string;
+  benchmark: string;
+  total_return?: number | null;
+  annual_return?: number | null;
+  max_drawdown?: number | null;
+  sharpe?: number | null;
+  sortino?: number | null;
+  calmar?: number | null;
+  win_rate?: number | null;
+  profit_loss_ratio?: number | null;
+  turnover?: number | null;
+  trade_count?: number | null;
+  avg_holding_days?: number | null;
+  excess_return?: number | null;
+  information_ratio?: number | null;
+  status: string;
+  artifacts_path: string;
+}
+
+export interface JoinQuantBacktestResultImportResponse {
+  status: string;
+  run_id: string;
+  strategy_id: string;
+  source_idea_id?: string | null;
+  portfolio_id: string;
+  jq_task_id?: string | null;
+  backtest: JoinQuantBacktestResult;
+  task?: JoinQuantTask | null;
+  lifecycle?: Record<string, unknown> | null;
+  replace: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantExecutionReportListResponse {
+  status: string;
+  count: number;
+  reports: JoinQuantExecutionReport[];
+}
+
+export interface JoinQuantSimulationReadinessQuery {
+  portfolio_id: string;
+  lookback_days?: number;
+  min_batches?: number;
+  tolerance?: number;
+  max_failed_rate?: number;
+  max_missing_rate?: number;
+  max_deviation_rate?: number;
+  max_signal_delay_days?: number;
+}
+
+export interface JoinQuantReadinessCheck {
+  name: string;
+  status: "pass" | "warning" | "fail" | string;
+  observed: number;
+  threshold: number;
+  message: string;
+}
+
+export interface JoinQuantReadinessBacktestRisk {
+  status: "ok" | "unknown" | "needs_review" | string;
+  run_count: number;
+  worst_max_drawdown: number;
+  avg_sharpe: number;
+  avg_trade_count: number;
+  message: string;
+}
+
+export interface JoinQuantReadinessDailySummary {
+  signal_date: string;
+  trade_date: string;
+  status: string;
+  report_count: number;
+  signal_count: number;
+  failed_count: number;
+  missing_report_count: number;
+  unmatched_report_count: number;
+  max_abs_weight_diff: number;
+  total_abs_weight_diff: number;
+  deviation_count: number;
+  signal_delay_days: number;
+  action_required: boolean;
+}
+
+export interface JoinQuantSimulationReadinessReport {
+  status: "ready" | "needs_more_data" | "needs_review" | string;
+  recommendation: "continue_simulation" | "extend_observation" | "fix_before_live" | string;
+  readiness_score: number;
+  portfolio_id: string;
+  lookback_days: number;
+  window_start: string;
+  window_end: string;
+  tolerance: number;
+  min_batches: number;
+  observed_batch_count: number;
+  signal_batch_count: number;
+  missing_signal_batch_count: number;
+  totals: {
+    report_count: number;
+    signal_count: number;
+    failed_count: number;
+    missing_report_count: number;
+    unmatched_report_count: number;
+    deviation_count: number;
+    limit_or_suspend_issue_count: number;
+    total_abs_weight_diff: number;
+    max_abs_weight_diff: number;
+    avg_signal_delay_days: number;
+    max_signal_delay_days: number;
+  };
+  rates: {
+    failed_rate: number;
+    missing_report_rate: number;
+    unmatched_report_rate: number;
+    deviation_rate: number;
+  };
+  backtest_risk: JoinQuantReadinessBacktestRisk;
+  checks: JoinQuantReadinessCheck[];
+  findings: string[];
+  daily_summaries: JoinQuantReadinessDailySummary[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskCreateRequest {
+  source_strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id?: string;
+  signal_date?: string | null;
+  task_type?: "backtest" | "paper_simulation" | string;
+  created_by?: string;
+}
+
+export interface JoinQuantTaskUpdateRequest {
+  status?: "draft" | "waiting_confirm" | "running" | "completed" | "failed" | "cancelled" | string;
+  result_summary?: Record<string, unknown> | null;
+  evidence?: Record<string, unknown>[] | null;
+  error_message?: string | null;
+}
+
+export interface JoinQuantAutomationPlanRequest {
+  start_date?: string | null;
+  end_date?: string | null;
+  initial_cash?: number;
+}
+
+export interface JoinQuantTaskQuery {
+  status?: string | null;
+  limit?: number;
+}
+
+export interface JoinQuantTask {
+  task_id: string;
+  source_strategy_id?: string | null;
+  source_idea_id?: string | null;
+  portfolio_id: string;
+  signal_date: string;
+  task_type: string;
+  status: string;
+  task_package: Record<string, unknown>;
+  result_summary: Record<string, unknown>;
+  evidence: Record<string, unknown>[];
+  error_message?: string | null;
+  fallback_instruction: string;
+  created_by: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskResponse {
+  status: string;
+  task: JoinQuantTask;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantTaskListResponse {
+  status: string;
+  task_count: number;
+  tasks: JoinQuantTask[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface JoinQuantAutomationPlanResponse {
+  status: string;
+  task_id: string;
+  task: JoinQuantTask;
+  automation_mode: string;
+  backtest_window: {
+    start_date: string;
+    end_date: string;
+    initial_cash: number;
+  };
+  joinquant_research_script: string;
+  browser_steps: Record<string, unknown>[];
+  fallback_instruction: string;
+  safety_guardrails: Record<string, boolean>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type DailyWorkflowStepName =
+  | "collect_public_data"
+  | "collect_documents"
+  | "extract_events"
+  | "map_events"
+  | "score_sectors"
+  | "build_candidates"
+  | "prepare_joinquant_strategy"
+  | "seed_strategy_specs"
+  | "run_backtests"
+  | "rank_backtests"
+  | "allocate_portfolio"
+  | "generate_draft_signals"
+  | "calculate_event_reactions";
+
+export interface DailyWorkflowDocumentPayload {
+  source_id: string;
+  title: string;
+  content: string;
+  publish_time: string;
+  summary?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  language?: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface DailyWorkflowRunRequest {
+  workflow_date?: string | null;
+  portfolio_id: string;
+  steps?: DailyWorkflowStepName[] | null;
+  documents?: DailyWorkflowDocumentPayload[];
+  dry_run?: boolean;
+  continue_on_error?: boolean;
+  event_limit?: number;
+  min_event_relevance?: number;
+  map_limit?: number;
+  min_mapping_relevance?: number;
+  sector_limit?: number;
+  candidate_limit?: number;
+  min_sector_score?: number;
+  seed_strategy_specs?: boolean;
+  backtest_start_date?: string | null;
+  backtest_end_date?: string | null;
+  backtest_limit?: number;
+  ranking_limit?: number;
+  top_n?: number;
+  market_regime?: string;
+  current_drawdown?: number;
+  signal_confidence?: number;
+  replace_signals?: boolean;
+  event_reaction_windows?: EventReactionWindow[] | null;
+  event_reaction_target_types?: EventReactionTargetType[] | null;
+  event_reaction_limit?: number;
+  replace_event_reactions?: boolean;
+}
+
+export interface DailyWorkflowStepResult {
+  name: DailyWorkflowStepName | string;
+  status: "ok" | "skipped" | "blocked" | "planned" | string;
+  message: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface DailyWorkflowRunResponse {
+  status: "ok" | "blocked" | "dry_run" | string;
+  workflow_date: string;
+  portfolio_id: string;
+  requested_steps: DailyWorkflowStepName[];
+  completed_step_count: number;
+  skipped_step_count: number;
+  blocked_step?: string | null;
+  steps: DailyWorkflowStepResult[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyTemplate {
+  strategy_type: string;
+  template_name: string;
+  description: string;
+  signal_rules: string[];
+  risk_notes: string[];
+  default_rebalance_freq: string;
+  default_holding_period: number;
+  default_max_position: number;
+  default_max_sector_exposure: number;
+  default_max_total_exposure: number;
+  default_stop_loss: number;
+  default_take_profit: number;
+}
+
+export interface StrategyTemplateListResponse {
+  templates: StrategyTemplate[];
+  template_count: number;
+}
+
+export interface StrategySpecSeedRequest {
+  replace?: boolean;
+}
+
+export interface StrategySpecSeedResponse {
+  status: string;
+  template_count: number;
+  variant_count: number;
+  strategy_specs_written: number;
+  strategy_specs_skipped: number;
+  total_expected_specs: number;
+}
+
+export interface StrategySpecQuery {
+  strategy_type?: string | null;
+  enabled?: boolean | null;
+  limit?: number;
+}
+
+export interface StrategySpec {
+  strategy_id: string;
+  strategy_name: string;
+  market: string;
+  strategy_type: string;
+  params: Record<string, unknown>;
+  rebalance_freq: string;
+  holding_period: number;
+  max_position: number;
+  max_sector_exposure: number;
+  max_total_exposure: number;
+  stop_loss: number;
+  take_profit: number;
+  enabled: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StrategySpecListResponse {
+  strategy_specs: StrategySpec[];
+  spec_count: number;
+}
+
+export interface BacktestBatchRequest {
+  start_date: string;
+  end_date: string;
+  as_of_date?: string | null;
+  strategy_ids?: string[] | null;
+  limit?: number;
+  benchmark?: string;
+}
+
+export interface BacktestRun {
+  run_id: string;
+  strategy_id: string;
+  market: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  universe_id?: string | null;
+  benchmark: string;
+  total_return: number;
+  annual_return: number;
+  max_drawdown: number;
+  sharpe: number;
+  sortino: number;
+  calmar: number;
+  win_rate: number;
+  profit_loss_ratio: number;
+  turnover: number;
+  trade_count: number;
+  avg_holding_days: number;
+  excess_return: number;
+  information_ratio: number;
+  status: string;
+  artifacts_path?: string | null;
+  created_at?: string | null;
+}
+
+export interface BacktestBatchResponse {
+  status: string;
+  as_of_date: string;
+  start_date: string;
+  end_date: string;
+  runs_written: number;
+  top_runs: BacktestRun[];
+}
+
+export interface BacktestRunQuery {
+  strategy_id?: string | null;
+  status?: string | null;
+  limit?: number;
+}
+
+export interface BacktestRunListResponse {
+  backtest_runs: BacktestRun[];
+  run_count: number;
+}
+
+export interface BacktestRankingQuery {
+  strategy_type?: string | null;
+  status?: string | null;
+  min_score?: number | null;
+  limit?: number;
+}
+
+export interface BacktestRanking extends BacktestRun {
+  strategy_name: string;
+  sample_days: number;
+  strategy_type: string;
+  params: Record<string, unknown>;
+  rebalance_freq: string;
+  holding_period: number;
+  strategy_score: number;
+  risk_score: number;
+  score_components: Record<string, number>;
+  recommendation: string;
+  reason: string;
+  rank: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface BacktestRankingResponse {
+  rankings: BacktestRanking[];
+  ranking_count: number;
+  scoring_model: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaGenerateRequest {
+  theme?: string | null;
+  as_of_date?: string | null;
+  risk_preference?: "conservative" | "balanced" | "aggressive" | string;
+  max_ideas?: number;
+  min_candidate_score?: number;
+  strategy_types?: string[] | null;
+}
+
+export interface StrategyIdeaTicker {
+  ticker: string;
+  ticker_name: string;
+  stock_score: number;
+}
+
+export interface StrategyIdea {
+  idea_id: string;
+  as_of_date?: string | null;
+  theme: string;
+  strategy_type: string;
+  strategy_name: string;
+  strategy_family: string;
+  idea_category: string;
+  risk_preference: string;
+  holding_period: number;
+  rebalance_freq: string;
+  idea_score: number;
+  status: string;
+  thesis: string;
+  candidate_tickers: StrategyIdeaTicker[];
+  sector_ids: string[];
+  source_event_ids: string[];
+  entry_rules: string[];
+  exit_rules: string[];
+  risk_controls: string[];
+  params: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaGenerateResponse {
+  status: string;
+  as_of_date: string;
+  theme: string;
+  risk_preference: string;
+  idea_count: number;
+  ideas: StrategyIdea[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaQuery {
+  as_of_date?: string | null;
+  theme?: string | null;
+  strategy_type?: string | null;
+  status?: string | null;
+  limit?: number;
+}
+
+export interface StrategyIdeaListResponse {
+  status: string;
+  ideas: StrategyIdea[];
+  idea_count: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyIdeaSaveSpecRequest {
+  enabled?: boolean;
+}
+
+export interface StrategyIdeaSaveSpecResponse {
+  status: string;
+  idea_id: string;
+  strategy_spec: StrategySpec;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface SectorStockDashboardQuery {
+  as_of_date?: string | null;
+  theme?: string | null;
+}
+
+export interface SectorStockDashboardCandidateMatrix {
+  ticker: string;
+  ticker_name: string;
+  sector_name: string;
+  leader_score: number;
+  order_score: number;
+  catch_up_score: number;
+  crowding_flag: boolean;
+}
+
+export interface SectorStockDashboardResponse {
+  status: string;
+  as_of_date: string;
+  theme: string;
+  data_mode: "local" | "sample" | string;
+  sector_score: {
+    theme: string;
+    score: number;
+    summary: string;
+    badges: string[];
+  };
+  sector_rankings: DashboardSectorHeat[];
+  candidate_matrix: SectorStockDashboardCandidateMatrix[];
+  candidate_pool: CandidateRecord[];
+  strategy_ideas: StrategyIdea[];
+  codex_actions: string[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleQuery {
+  refresh?: boolean;
+  limit?: number;
+}
+
+export interface StrategyLifecycleFunnelItem {
+  state: string;
+  label: string;
+  count: number;
+}
+
+export interface StrategyLifecycleHealthBucket {
+  label: string;
+  count: number;
+  min_score: number;
+  max_score: number;
+}
+
+export interface StrategyLifecycleStrategy {
+  strategy_id: string;
+  idea_id?: string | null;
+  strategy_name: string;
+  theme: string;
+  lifecycle_state: string;
+  health_score: number;
+  recommendation: string;
+  reason: string;
+  first_seen_date?: string | null;
+  last_review_date?: string | null;
+  paper_days: number;
+  signal_count: number;
+  backtest_count: number;
+  best_annual_return?: number | null;
+  worst_max_drawdown?: number | null;
+  avg_sharpe?: number | null;
+  win_rate?: number | null;
+  evidence: Record<string, unknown>;
+  research_only: boolean;
+  live_trading: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StrategyLifecycleEvent {
+  event_id: string;
+  strategy_id: string;
+  event_time?: string | null;
+  from_state?: string | null;
+  to_state: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  created_by: string;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleRecommendation {
+  strategy_id: string;
+  strategy_name: string;
+  recommendation: string;
+  reason: string;
+  health_score: number;
+}
+
+export interface StrategyLifecycleOverviewResponse {
+  status: string;
+  data_mode: "local" | "sample" | string;
+  funnel: StrategyLifecycleFunnelItem[];
+  health_distribution: StrategyLifecycleHealthBucket[];
+  strategies: StrategyLifecycleStrategy[];
+  events: StrategyLifecycleEvent[];
+  recommendations: StrategyLifecycleRecommendation[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface StrategyLifecycleRefreshResponse {
+  status: string;
+  strategy_count: number;
+  strategies: StrategyLifecycleStrategy[];
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type MarketRegime = "strong_trend" | "normal" | "weak" | "extreme_risk" | string;
+
+export interface PortfolioAllocateRequest {
+  portfolio_id?: string;
+  as_of_date?: string | null;
+  top_n?: number;
+  market_regime?: MarketRegime;
+  current_drawdown?: number;
+  signal_confidence?: number;
+  max_strategy_weight?: number;
+  min_strategy_weight?: number;
+  max_strategy_type_weight?: number;
+  min_strategy_score?: number;
+}
+
+export interface PortfolioAllocation {
+  as_of_date?: string | null;
+  portfolio_id: string;
+  strategy_id: string;
+  strategy_score: number;
+  risk_score: number;
+  volatility: number;
+  correlation_penalty: number;
+  allocated_weight: number;
+  reason: string;
+  created_at?: string | null;
+  strategy_name: string;
+  strategy_type: string;
+}
+
+export interface PortfolioRiskRule {
+  threshold: number;
+  action: string;
+  triggered: boolean;
+}
+
+export interface PortfolioAllocationResponse {
+  status: "draft" | "risk_off" | string;
+  portfolio_id: string;
+  as_of_date: string;
+  market_regime: string;
+  model_total_exposure: number;
+  allocated_exposure: number;
+  cash_weight: number;
+  allocation_count: number;
+  strategy_allocations: PortfolioAllocation[];
+  constraints: Record<string, unknown>;
+  risk_rules: PortfolioRiskRule[];
+  requires_human_confirmation: boolean;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface PortfolioAllocationQuery {
+  portfolio_id?: string | null;
+  as_of_date?: string | null;
+  limit?: number;
+}
+
+export interface PortfolioAllocationListResponse {
+  strategy_allocations: PortfolioAllocation[];
+  allocation_count: number;
+}
+
+export interface PortfolioTradePlanQuery {
+  portfolio_id?: string | null;
+  as_of_date?: string | null;
+  max_single_stock_weight?: number;
+  max_sector_weight?: number;
+}
+
+export interface PortfolioTargetPosition {
+  ticker: string;
+  ticker_name: string;
+  target_weight: number;
+  current_weight: number;
+  action: string;
+  strategy_sources: string[];
+  theme?: string | null;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  reason: string;
+  risk: string;
+}
+
+export interface PortfolioTradePlanResponse {
+  status: string;
+  portfolio_id: string;
+  as_of_date: string;
+  target_total_exposure: number;
+  strategy_allocated_exposure: number;
+  cash_weight: number;
+  strategy_allocations: PortfolioAllocation[];
+  target_positions: PortfolioTargetPosition[];
+  risk_limits: {
+    max_single_stock_weight: number;
+    max_sector_weight: number;
+  };
+  requires_human_confirmation: boolean;
+  approval_status: string;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export type CandidateIncludedFilter = "all" | "included" | "excluded";
+
+export interface CandidatePoolQuery {
+  as_of_date?: string | null;
+  limit?: number;
+  source?: string | null;
+  included?: boolean | null;
+  min_score?: number;
+}
+
+export interface CandidateRecord {
+  as_of_date?: string | null;
+  ticker: string;
+  ticker_name: string;
+  market?: string;
+  source: string;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  theme?: string | null;
+  event_heat_score: number;
+  sector_heat_score: number;
+  stock_score: number;
+  user_priority?: number;
+  risk_flag: string;
+  included: boolean;
+  reason: string;
+  created_at?: string | null;
+}
+
+export interface CandidatePoolListResponse {
+  candidates: CandidateRecord[];
+  candidate_count: number;
+}
+
+export interface CandidatePoolBuildRequest {
+  as_of_date?: string | null;
+  limit?: number;
+  min_sector_score?: number;
+}
+
+export interface CandidatePoolBuildResponse {
+  status: string;
+  as_of_date: string;
+  rows_written: number;
+  candidate_count: number;
+  candidates: CandidateRecord[];
+}
+
+export interface UserCandidateRequest {
+  ticker: string;
+  ticker_name?: string | null;
+  as_of_date?: string | null;
+  theme?: string | null;
+  sector_id?: string | null;
+  sector_name?: string | null;
+  reason?: string | null;
+  user_priority?: number;
+}
+
+export interface CandidateDecisionRequest {
+  ticker: string;
+  as_of_date?: string | null;
+  reason?: string | null;
+}
+
+export type EventReactionWindow = "T+1" | "T+5" | "T+20" | "T+60";
+export type EventReactionTargetType = "sector" | "stock";
+
+export interface EventReactionCalculateRequest {
+  event_id?: string | null;
+  cluster_id?: string | null;
+  windows?: EventReactionWindow[] | null;
+  target_types?: EventReactionTargetType[] | null;
+  limit?: number;
+  replace?: boolean;
+}
+
+export interface EventReactionCalculateResponse {
+  status: string;
+  requested_targets: number;
+  windows: EventReactionWindow[];
+  target_types: EventReactionTargetType[];
+  reactions_written: number;
+  skipped_existing: number;
+  skipped_insufficient_data: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface EventReactionQuery {
+  event_id?: string | null;
+  cluster_id?: string | null;
+  target_type?: EventReactionTargetType | string | null;
+  target_id?: string | null;
+  window?: EventReactionWindow | string | null;
+  limit?: number;
+}
+
+export interface EventReactionRecord {
+  reaction_id: string;
+  cluster_id: string;
+  event_id: string;
+  target_type: EventReactionTargetType | string;
+  target_id: string;
+  target_name: string;
+  window: EventReactionWindow | string;
+  raw_return: number | null;
+  benchmark_return: number | null;
+  sector_return: number | null;
+  abnormal_return: number | null;
+  max_drawdown: number | null;
+  volume_change: number | null;
+  breadth_change: number | null;
+  calculated_at?: string | null;
+}
+
+export interface EventReactionListResponse {
+  status: string;
+  reactions: EventReactionRecord[];
+  reaction_count: number;
+}
+
+export interface EventReactionSummaryQuery {
+  event_subtype?: string | null;
+  target_type?: EventReactionTargetType | string | null;
+  target_id?: string | null;
+  window?: EventReactionWindow | string | null;
+}
+
+export interface EventReactionSummaryRow {
+  target_type: EventReactionTargetType | string;
+  window: EventReactionWindow | string;
+  reaction_count: number;
+  avg_raw_return: number | null;
+  avg_benchmark_return: number | null;
+  avg_sector_return: number | null;
+  avg_abnormal_return: number | null;
+  avg_max_drawdown: number | null;
+  avg_volume_change: number | null;
+  avg_breadth_change: number | null;
+}
+
+export interface EventReactionSummaryResponse {
+  status: string;
+  event_subtype?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  window: EventReactionWindow | string;
+  summaries: EventReactionSummaryRow[];
+  summary_count: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface EventSourceQuery {
+  enabled_only?: boolean;
+}
+
+export interface EventSourceRecord {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  endpoint_type: string;
+  url_or_route: string;
+  fetch_interval_minutes: number;
+  parser: string;
+  credibility: number;
+  legal_mode: string;
+  enabled: boolean;
+  last_fetch_time?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface EventSourceListResponse {
+  sources: EventSourceRecord[];
+  source_count: number;
+}
+
+export interface EventRawDocumentQuery {
+  limit?: number;
+  source_type?: string | null;
+  source_id?: string | null;
+}
+
+export interface EventRawDocument {
+  doc_id: string;
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  title: string;
+  content: string;
+  summary?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  content_hash: string;
+  language: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json: Record<string, unknown>;
+  credibility: number;
+  created_at?: string | null;
+}
+
+export interface EventRawDocumentListResponse {
+  documents: EventRawDocument[];
+  document_count: number;
+}
+
+export interface EventRadarDocumentPayload {
+  source_id: string;
+  title: string;
+  content: string;
+  publish_time: string;
+  summary?: string | null;
+  crawl_time?: string | null;
+  url?: string | null;
+  language?: string;
+  author_or_account?: string | null;
+  hot_rank?: number | null;
+  hot_value?: number | null;
+  raw_json?: Record<string, unknown> | null;
+}
+
+export interface EventRadarCollectRequest {
+  documents: EventRadarDocumentPayload[];
+}
+
+export interface EventRadarCollectResponse {
+  status: string;
+  requested: number;
+  inserted: number;
+  duplicates: number;
+  doc_ids: string[];
+  duplicate_doc_ids: string[];
+  source_ids: string[];
+  crawl_time: string;
+}
+
+export interface EventRadarExtractRequest {
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface EventRadarExtractResponse {
+  status: string;
+  requested: number;
+  extracted: number;
+  skipped_low_relevance: number;
+  event_ids: string[];
+  cluster_ids: string[];
+}
+
+export interface EventRadarEventQuery {
+  limit?: number;
+  event_type?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRadarEvent {
+  event_id: string;
+  cluster_id: string;
+  doc_id: string;
+  event_time?: string | null;
+  publish_time?: string | null;
+  crawl_time?: string | null;
+  knowable_time?: string | null;
+  tradable_time?: string | null;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  certainty: number;
+  a_share_relevance_score: number;
+  policy_level?: string | null;
+  created_at?: string | null;
+}
+
+export interface EventRadarEventListResponse {
+  events: EventRadarEvent[];
+  event_count: number;
+}
+
+export interface EventRadarClusterQuery {
+  limit?: number;
+  status?: string | null;
+  min_relevance?: number;
+}
+
+export interface EventRadarCluster {
+  cluster_id: string;
+  first_seen_time?: string | null;
+  last_seen_time?: string | null;
+  main_title: string;
+  event_type: string;
+  event_subtype: string;
+  summary: string;
+  sentiment: string;
+  intensity: number;
+  novelty: number;
+  hot_score: number;
+  a_share_relevance_score: number;
+  source_count: number;
+  mention_count: number;
+  cross_platform_score: number;
+  status: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface EventRadarClusterListResponse {
+  clusters: EventRadarCluster[];
+  cluster_count: number;
+}
+
+export interface EventRadarThemeMapQuery {
+  theme?: string | null;
+}
+
+export interface EventRadarThemeMapRecord {
+  theme: string;
+  sub_theme: string;
+  keyword: string;
+  sector_id: string;
+  sector_name: string;
+  ticker: string;
+  ticker_name: string;
+  relevance: number;
+  evidence: string;
+  source: string;
+  updated_at?: string | null;
+}
+
+export interface EventRadarThemeMapResponse {
+  theme_map: EventRadarThemeMapRecord[];
+  row_count: number;
+}
+
+export interface EventRadarMapRequest {
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface EventRadarMapResponse {
+  status: string;
+  requested_events: number;
+  mapped_events: number;
+  sector_rows_written: number;
+  stock_rows_written: number;
+  event_ids: string[];
+}
+
+export interface EventMappingQuery {
+  event_id?: string | null;
+  limit?: number;
+}
+
+export interface EventSectorMapping {
+  event_id: string;
+  cluster_id: string;
+  sector_id: string;
+  sector_name: string;
+  theme: string;
+  sub_theme: string;
+  relevance: number;
+  direction: string;
+  mapping_reason: string;
+  created_at?: string | null;
+}
+
+export interface EventSectorMappingListResponse {
+  sector_mappings: EventSectorMapping[];
+  row_count: number;
+}
+
+export interface EventStockMapping {
+  event_id: string;
+  cluster_id: string;
+  ticker: string;
+  ticker_name: string;
+  theme: string;
+  sector_id: string;
+  relevance: number;
+  direction: string;
+  mapping_reason: string;
+  created_at?: string | null;
+}
+
+export interface EventStockMappingListResponse {
+  stock_mappings: EventStockMapping[];
+  row_count: number;
+}
+
+export interface SectorScoreRunRequest {
+  trade_date?: string | null;
+  limit?: number;
+  min_relevance?: number;
+}
+
+export interface SectorScoreRecord {
+  trade_date?: string | null;
+  sector_id: string;
+  sector_name: string;
+  event_heat: number;
+  market_confirm: number;
+  breadth_score: number;
+  flow_score: number;
+  persistence_score: number;
+  crowding_risk: number;
+  sector_heat_score: number;
+  cycle_stage: string;
+  created_at?: string | null;
+}
+
+export interface SectorScoreRunResponse {
+  status: string;
+  trade_date: string;
+  scored_sectors: number;
+  rows_written: number;
+  top_sectors: SectorScoreRecord[];
+}
+
+export interface SectorScoreQuery {
+  trade_date?: string | null;
+  limit?: number;
+  min_score?: number;
+}
+
+export interface SectorScoreListResponse {
+  sector_scores: SectorScoreRecord[];
+  row_count: number;
 }
 
 // --- Types matching backend API contracts ---
@@ -733,6 +2783,181 @@ export interface AlphaCompareResult {
   winner: string;
   ranking: AlphaCompareRow[];
   skipped: AlphaCompareSkip[];
+}
+
+export interface AdvisorSnapshotQuery {
+  portfolio_id?: string;
+  as_of_date?: string;
+  limit?: number;
+  event_limit?: number;
+}
+
+export interface AdvisorSummaryCard {
+  label: string;
+  value: string | number | null;
+}
+
+export interface AdvisorActionItem {
+  type?: string;
+  ticker?: string;
+  ticker_name?: string;
+  action?: string;
+  label?: string;
+  reason?: string;
+  trigger?: string | number | null;
+  next_review_date?: string | null;
+}
+
+export interface AdvisorDiagnostic {
+  ticker: string;
+  ticker_name: string;
+  action: string;
+  action_label: string;
+  reason: string;
+  risk?: string;
+  current_price?: number | null;
+  next_review_date?: string | null;
+  sell_line?: Record<string, unknown> | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorCandidate {
+  ticker: string;
+  ticker_name: string;
+  suggested_status: string;
+  suggested_status_label: string;
+  reason: string;
+  buy_trigger_price?: number | null;
+  buy_trigger_condition?: string | null;
+  not_buy_conditions?: string | null;
+  max_position_pct?: number | null;
+  suggested_buy_shares?: number | null;
+  suggested_buy_amount?: number | null;
+  position_budget?: number | null;
+  sizing_price?: number | null;
+  risk_amount_at_stop?: number | null;
+  target_holding_days?: number | null;
+  price?: Record<string, unknown>;
+}
+
+export interface AdvisorRiskItem {
+  ticker: string;
+  ticker_name: string;
+  rule_id: string;
+  rule_label: string;
+  severity: string;
+  reason: string;
+}
+
+export interface AdvisorExternalValidation {
+  validation_id: string;
+  source: string;
+  source_ref?: string | null;
+  subject_type: string;
+  subject_id?: string | null;
+  validation_date?: string | null;
+  status: string;
+  metrics: Record<string, unknown>;
+  summary?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+}
+
+export interface AdvisorTodaySnapshot {
+  snapshot_type: "today";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  summary_cards: AdvisorSummaryCard[];
+  primary_actions: AdvisorActionItem[];
+  holding_action_counts: Record<string, number>;
+  candidate_status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  data_freshness: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorHoldingsSnapshot {
+  snapshot_type: "holdings";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  portfolio_summary: Record<string, unknown>;
+  diagnostics: AdvisorDiagnostic[];
+  prices: Record<string, unknown>[];
+  action_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorWatchlistSnapshot {
+  snapshot_type: "watchlist";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  candidates: AdvisorCandidate[];
+  do_not_buy_items: AdvisorRiskItem[];
+  status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorStocksSnapshot {
+  snapshot_type: "stocks";
+  title: string;
+  portfolio_id: string;
+  as_of_date: string;
+  headline: string;
+  summary_cards: AdvisorSummaryCard[];
+  portfolio_summary: Record<string, unknown>;
+  holdings: AdvisorDiagnostic[];
+  watchlist: AdvisorCandidate[];
+  do_not_buy_items: AdvisorRiskItem[];
+  prices: Record<string, unknown>[];
+  action_counts: Record<string, number>;
+  status_counts: Record<string, number>;
+  risk_rule_counts: Record<string, number>;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorJournalSnapshot {
+  snapshot_type: "journal";
+  title: string;
+  portfolio_id: string;
+  headline: string;
+  commands: Record<string, unknown>[];
+  recommendations: Record<string, unknown>[];
+  external_validations: AdvisorExternalValidation[];
+  alerts?: Record<string, unknown>[];
+  decision_journals?: Record<string, unknown>[];
+  record_count: number;
+  research_only: boolean;
+  live_trading: boolean;
+}
+
+export interface AdvisorMemorySnapshot {
+  snapshot_type: "memory";
+  title: string;
+  portfolio_id: string;
+  headline: string;
+  events: EventRecord[];
+  event_count: number;
+  event_error?: string | null;
+  commands: Record<string, unknown>[];
+  recommendations: Record<string, unknown>[];
+  external_validations: AdvisorExternalValidation[];
+  alerts?: Record<string, unknown>[];
+  decision_journals?: Record<string, unknown>[];
+  record_count: number;
+  summary_cards: AdvisorSummaryCard[];
+  research_only: boolean;
+  live_trading: boolean;
 }
 
 // --- Connector runtime channel types ---

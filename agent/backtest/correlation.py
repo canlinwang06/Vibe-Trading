@@ -136,6 +136,10 @@ def compute_correlation_matrix(
     """
     from datetime import datetime, timedelta
 
+    from src.market_policy import validate_a_share_codes
+
+    codes = validate_a_share_codes(codes, surface="correlation")
+
     end_date = datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.now() - timedelta(days=days + 60)).strftime("%Y-%m-%d")
 
