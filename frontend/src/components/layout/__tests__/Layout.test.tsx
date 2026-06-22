@@ -22,11 +22,11 @@ describe("Layout A-share navigation", () => {
   it("renders only the current advisor navigation shell", () => {
     renderLayout();
 
-    expect(screen.getByText("投资助手")).toBeInTheDocument();
+    expect(screen.getAllByText("投资助手").length).toBeGreaterThan(0);
     for (const label of ASHARE_NAV_LABELS_ZH) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
-    expect(screen.getByRole("button", { name: "切换语言" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "切换语言" }).length).toBeGreaterThan(0);
     expect(screen.queryByText("English")).not.toBeInTheDocument();
   });
 

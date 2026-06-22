@@ -139,13 +139,13 @@ function AdvisorShell({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-7">
-      <header className="mb-6">
+    <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-7">
+      <header className="mb-5 sm:mb-6">
         <div className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 text-xs text-muted-foreground">
           {icon}
           {eyebrow}
         </div>
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="mt-3 text-xl font-semibold tracking-tight sm:mt-4 sm:text-2xl">{title}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{headline}</p>
       </header>
       {children}
@@ -187,7 +187,7 @@ function ActionCard({ item }: { item: AdvisorActionItem }) {
   return (
     <article className={cn("rounded-lg border p-4", actionTone(item.action))}>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{item.label || item.action || "行动建议"}</p>
           {item.ticker ? (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -195,7 +195,7 @@ function ActionCard({ item }: { item: AdvisorActionItem }) {
             </p>
           ) : null}
         </div>
-        {item.type ? <span className="rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">{item.type}</span> : null}
+        {item.type ? <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">{item.type}</span> : null}
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
       {item.trigger ? <p className="mt-2 text-xs text-muted-foreground">触发条件：{formatValue(item.trigger)}</p> : null}
@@ -208,11 +208,11 @@ function DiagnosticCard({ item }: { item: AdvisorDiagnostic }) {
   return (
     <article className={cn("rounded-lg border p-4", actionTone(item.action))}>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{item.action_label}</p>
           <p className="mt-1 text-xs text-muted-foreground">{item.ticker_name} / {item.ticker}</p>
         </div>
-        <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.current_price)}</span>
+        <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.current_price)}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
       <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
@@ -237,11 +237,11 @@ function CandidateCard({ item }: { item: AdvisorCandidate }) {
   return (
     <article className={cn("rounded-lg border p-4", actionTone(item.suggested_status))}>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{item.suggested_status_label}</p>
           <p className="mt-1 text-xs text-muted-foreground">{item.ticker_name} / {item.ticker}</p>
         </div>
-        <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.buy_trigger_price)}</span>
+        <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.buy_trigger_price)}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
@@ -272,11 +272,11 @@ function RiskCard({ item }: { item: AdvisorRiskItem }) {
   return (
     <article className="rounded-lg border border-warning/40 bg-warning/5 p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{item.rule_label}</p>
           <p className="mt-1 text-xs text-muted-foreground">{item.ticker_name} / {item.ticker}</p>
         </div>
-        <span className="rounded-md border bg-background px-2 py-1 text-xs">{item.severity}</span>
+        <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs">{item.severity}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.reason}</p>
     </article>
@@ -287,13 +287,13 @@ function ValidationCard({ item }: { item: AdvisorExternalValidation }) {
   return (
     <article className="rounded-lg border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{formatValue(item.summary || "外部验证结果")}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {formatValue(item.source)} / {formatValue(item.subject_id || item.source_ref)}
           </p>
         </div>
-        <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.status)}</span>
+        <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.status)}</span>
       </div>
       <dl className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
         <div>
@@ -361,11 +361,11 @@ function RecommendationCard({ item }: { item: Record<string, unknown> }) {
   return (
     <article className="rounded-lg border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{formatValue(item.action_label || item.action_type || "系统建议")}</p>
           <p className="mt-1 text-xs text-muted-foreground">{formatValue(item.ticker_name)} / {formatValue(item.ticker)}</p>
         </div>
-        {item.created_at ? <span className="rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.created_at).slice(0, 10)}</span> : null}
+        {item.created_at ? <span className="shrink-0 rounded-md border bg-background px-2 py-1 text-xs">{formatValue(item.created_at).slice(0, 10)}</span> : null}
       </div>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{formatValue(item.reason || item.summary)}</p>
     </article>
