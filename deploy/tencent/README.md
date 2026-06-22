@@ -32,11 +32,18 @@ docker compose -f docker-compose.cloud.yml build
 docker compose -f docker-compose.cloud.yml up -d
 ```
 
-Install the Nginx allowlist file:
+Install the Nginx allowlist files into the existing Tencent Cloud Nginx server.
+This deployment should be mounted as a subpath instead of replacing the current
+default site:
 
 ```bash
-sudo cp nginx-vibe-trading.conf /etc/nginx/conf.d/vibe-trading.conf
+sudo cp nginx-vibe-trading-upstream.conf /etc/nginx/conf.d/vibe-trading-upstream.conf
+sudo cp nginx-vibe-trading.conf /etc/nginx/snippets/vibe-trading-locations.conf
 sudo htpasswd -c /etc/nginx/.htpasswd-vibe-trading <user>
+sudo cp /etc/nginx/sites-available/qikong-ip.conf \
+  /etc/nginx/sites-available/qikong-ip.conf.bak-vibe-$(date +%Y%m%d-%H%M%S)
+sudo sed -i '/futures-quant-locations.conf/a\    include /etc/nginx/snippets/vibe-trading-locations.conf;' \
+  /etc/nginx/sites-available/qikong-ip.conf
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -59,7 +66,8 @@ Expected:
 - `/vibe-trading/` returns the three-page app.
 - The three snapshot APIs return `200` through Nginx after private access auth.
 - `/health` returns healthy status.
-- Old or sensitive endpoints return `404` through Nginx.
+- Old or sensitive Vibe-Trading endpoints return `404` through Nginx.
+- Existing non-Vibe routes on the server continue to work.
 
 ## Rollback
 

@@ -26,10 +26,20 @@ LABEL org.opencontainers.image.title="Vibe-Trading" \
 
 WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# Tencent Cloud builds can skip build-essential because the locked dependency
+# set resolves to wheels there; local/full builds keep the safer default.
+ARG INSTALL_BUILD_ESSENTIAL=1
+ARG PIP_INDEX_URL=
+ARG PIP_TRUSTED_HOST=
+RUN if [ -n "$PIP_INDEX_URL" ]; then pip config set global.index-url "$PIP_INDEX_URL"; fi \
+    && if [ -n "$PIP_TRUSTED_HOST" ]; then pip config set global.trusted-host "$PIP_TRUSTED_HOST"; fi \
+    && if [ "$INSTALL_BUILD_ESSENTIAL" = "1" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends build-essential \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        python -V; \
+    fi
 
 # Python deps (install before copying code for layer caching)
 COPY agent/requirements.txt agent/requirements.txt

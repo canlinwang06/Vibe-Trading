@@ -5,6 +5,9 @@ services:
       args:
         VITE_BASE_PATH: /vibe-trading/
         VITE_VIBE_CLOUD_THREE_PAGE: "1"
+        INSTALL_BUILD_ESSENTIAL: "0"
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
     image: vibe-trading:cloud-three-page
     container_name: vibe-trading-cloud
     ports:
